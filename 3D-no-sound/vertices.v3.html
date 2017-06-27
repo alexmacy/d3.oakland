@@ -1,0 +1,155 @@
+<!-- 
+plotting 20,000 points along the exterior of a sphere in a spiral pattern
+-->
+<!DOCTYPE html>
+<title>Points on a Sphere v3</title>
+<style>
+  body {
+    font-family: Monospace;
+    margin: 0px;
+    overflow: hidden;
+  }
+  .scene-container {
+    position: absolute;
+    left: 0px;
+    top: 0px;
+  }
+  button {
+    position: absolute;
+    left: 10px;
+    top: 10px;
+    z-index: 9;
+  }
+</style>
+
+<script src="../js/three.min.js"></script>
+<script src="../js/OrbitControls.js"></script>
+
+<button onclick="cycle()">Cycle</button>
+<div class="scene-container"></div>
+
+
+<script>
+
+// create the three.js scene and global variables
+const scene = new THREE.Scene();
+const renderer = new THREE.WebGLRenderer();
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 1, 10000);
+
+const geometry = new THREE.Geometry();
+
+var material = new THREE.MeshBasicMaterial( { color: "rgba(255, 0, 0, .01)" } );
+var line = new THREE.Line(geometry, material);
+line.castShadow = true;
+scene.add(line);
+
+
+addSceneElements();
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+function addSceneElements() {
+  // create the camera
+  camera.position.set(0, 0, 500);
+
+  // create the ambient light and spot light
+  const light = new THREE.SpotLight(0xffffff, 1.5);
+  light.position.set(0, 1500, 0);
+  light.castShadow = true;
+  light.shadow = new THREE.LightShadow(new THREE.PerspectiveCamera(70, 1, 200, 2000));
+
+  // create the plane for the shadows
+  const planeGeometry = new THREE.PlaneGeometry(2000, 2000);
+  planeGeometry.rotateX(-Math.PI / 2);
+
+  const planeMaterial = new THREE.ShadowMaterial({opacity: 0.2});
+  const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+  plane.position.y = -200;
+  plane.receiveShadow = true;
+
+  // create the grid to help with orientation 
+  const helper = new THREE.GridHelper( 2000, 100 );
+  helper.position.y = - 199;
+  helper.material.opacity = 0.25;
+  helper.material.transparent = true;
+
+  renderer.setClearColor(0xffffff);
+  renderer.setPixelRatio(devicePixelRatio);
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.shadowMap.enabled = true;
+
+  document.querySelector(".scene-container").appendChild(renderer.domElement);
+
+  // add the elements to the scene
+  scene.add(camera)
+      .add(light)
+      .add(new THREE.AmbientLight(0xf0f0f0))
+      .add(plane)
+      .add(helper);
+}
+
+
+for (let i=0; i<100; i += 1) {
+  for (let j=-100; j<100; j += 1) {
+    var theta = (i/100) * (Math.PI)
+    var phi = (j/100) * (Math.PI)
+    var newVertex = new THREE.Vector3(...getCoords(theta, phi))
+
+    newVertex.orig = [theta, phi];
+
+    geometry.vertices.push(newVertex);
+  }
+}
+
+function getCoords(theta, phi, newR = 1) {
+  var radius = 100 * newR;
+
+  var x = radius * Math.sin(theta) * Math.cos(phi);
+  var y = radius * Math.sin(theta) * Math.sin(phi);
+  var z = radius * Math.cos(theta);
+
+  return [x, y, z]
+}
+
+function updateRadius(n, delta) {
+  var vertex = line.geometry.vertices[n];
+  var [theta, phi] = vertex.orig;
+  var [x, y, z] = getCoords(theta, phi, delta)
+  vertex.x = x;
+  vertex.y = y;
+  vertex.z = z;
+}
+
+animate()
+
+function animate() {
+  requestAnimationFrame(animate);
+  renderer.render(scene, camera);
+}
+
+function jiggle() {
+  for (let i=0; i<line.geometry.vertices.length; i++) {
+    updateRadius(i, (Math.random()-.5)/10 + 1)
+  }
+  geometry.verticesNeedUpdate = true;
+  requestAnimationFrame(jiggle)
+}
+
+function cycle(val = 1.2, step = 0) {
+  if (step < line.geometry.vertices.length) {
+    updateRadius(step, val)
+    line.geometry.verticesNeedUpdate = true
+    setTimeout(function() {cycle(val, step + 1)}, 0)
+  }
+}
+
+function explode() {
+  for (let i=0; i<line.geometry.vertices.length; i++) {
+    updateRadius(i, 10)
+  }
+  geometry.verticesNeedUpdate = true;
+}
+
+
+</script>
+</html>

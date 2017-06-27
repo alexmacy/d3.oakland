@@ -1,0 +1,69 @@
+<!-- 
+visualizing time series data from the audio buffer using rotating ellipses
+-->
+<!DOCTYPE html>
+<title>Rotating Ellipses v1</title>
+<script src="../js/d3.v4.min.js"></script>
+<body style="margin: 0px">
+  <canvas></canvas>
+</body>
+<script>  
+const width = innerWidth;
+const height = innerHeight;
+const volScale = d3.scaleLog().range([0, 300])
+
+navigator.getUserMedia = (navigator.getUserMedia ||
+                          navigator.webkitGetUserMedia ||
+                          navigator.mozGetUserMedia ||
+                          navigator.msGetUserMedia);
+
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const analyser = audioCtx.createAnalyser();
+
+const canvas = document.querySelector('canvas');
+canvas.setAttribute('width', width);
+canvas.setAttribute('height', height);
+
+const canvasCtx = canvas.getContext("2d");
+canvasCtx.fillStyle = 'rgb(0, 0, 0)';
+canvasCtx.lineWidth = 1;
+canvasCtx.strokeStyle = 'rgb(255, 0, 0)';
+
+analyser.fftSize = 256;
+const bufferLength = analyser.frequencyBinCount;
+const dataArray = new Uint8Array(bufferLength);
+
+if (navigator.getUserMedia) {
+  navigator.getUserMedia (
+    {audio: true},
+    function(stream) {
+      audioCtx.createMediaStreamSource(stream).connect(analyser);
+      draw();
+    },
+    function(err) {
+      console.log('The following gUM error occured: ' + err);
+    }
+  );
+} else {
+   console.log('getUserMedia not supported on your browser!');
+}
+
+function draw() {
+  analyser.getByteTimeDomainData(dataArray);  
+  const volExt = d3.extent(dataArray)
+  volScale.domain(volExt[1] - volExt[0] < 2 ? [127, 127] : d3.extent(dataArray))
+  
+  canvasCtx.fillRect(0, 0, width, height);
+  canvasCtx.beginPath();
+
+  for(let i = 1; i < bufferLength; i++) {
+    const thisVal = volScale(dataArray[i])
+    const thisRotation = i/dataArray.length * Math.PI;
+    canvasCtx.ellipse(width/2, height/2, thisVal/2, thisVal, thisRotation, 0, 2 * Math.PI);
+  }
+
+  canvasCtx.stroke();
+
+  requestAnimationFrame(draw);
+};
+</script>

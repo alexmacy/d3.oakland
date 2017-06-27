@@ -1,0 +1,186 @@
+<!-- 
+plotting ~2,000 points along the exterior of a sphere
+-->
+<!DOCTYPE html>
+<title>Points on a Sphere v2</title>
+<style>
+  body {
+    font-family: Monospace;
+    margin: 0px;
+    overflow: hidden;
+  }
+  .scene-container {
+    position: absolute;
+    left: 0px;
+    top: 0px;
+  }
+  button {
+    position: absolute;
+    left: 10px;
+    top: 10px;
+    z-index: 9;
+  }
+</style>
+
+<script src="../js/three.min.js"></script>
+<script src="../js/OrbitControls.js"></script>
+
+<button onclick="cycle()">Cycle</button>
+<div class="scene-container"></div>
+
+<script>
+var jiggleVal = 10
+
+const scene = new THREE.Scene();
+const renderer = new THREE.WebGLRenderer();
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 1, 10000);
+
+const geometry = new THREE.Geometry();
+
+var material = new THREE.MeshBasicMaterial( { color: "rgba(255, 0, 0, .01)" } );
+var line = new THREE.Line(geometry, material);
+
+line.castShadow = true;
+scene.add(line);
+addSceneElements();
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableKeys = false;
+
+
+function addSceneElements() {
+  // create the camera
+  camera.position.set(0, 0, 500);
+
+  // create the ambient light and spot light
+  const light = new THREE.SpotLight(0xffffff, 1.5);
+  light.position.set(0, 1500, 0);
+  light.castShadow = true;
+  light.shadow = new THREE.LightShadow(new THREE.PerspectiveCamera(70, 1, 200, 2000));
+
+  // create the plane for the shadows
+  const planeGeometry = new THREE.PlaneGeometry(2000, 2000);
+  planeGeometry.rotateX(-Math.PI / 2);
+
+  const planeMaterial = new THREE.ShadowMaterial({opacity: 0.2});
+  const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+  plane.position.y = -200;
+  plane.receiveShadow = true;
+
+  // create the grid to help with orientation 
+  const helper = new THREE.GridHelper( 2000, 100 );
+  helper.position.y = - 199;
+  helper.material.opacity = 0.25;
+  helper.material.transparent = true;
+
+  renderer.setClearColor(0xffffff);
+  renderer.setPixelRatio(devicePixelRatio);
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.shadowMap.enabled = true;
+
+  document.querySelector(".scene-container").appendChild(renderer.domElement);
+
+  // add the elements to the scene
+  scene.add(camera)
+      .add(light)
+      .add(new THREE.AmbientLight(0xf0f0f0))
+      .add(plane)
+      .add(helper);
+}
+
+
+for (let x=-20; x<=20; x += 2) {
+  for (let y=-90; y<=90; y += 2) {
+    var newVertex = new THREE.Vector3(...getCoords(x, y))
+
+    newVertex.orig = [x, y];
+
+    geometry.vertices.push(newVertex);
+  }
+}
+
+
+function getCoords(x, y, newR = 1) {
+  var radius = 100;
+
+  var newX = radius * Math.sin(x) * Math.cos(y);
+  var newY = radius * Math.sin(x) * Math.sin(y);
+  var newZ = radius * Math.cos(x);
+
+  return [newX, newY, newZ]
+}
+
+function getRadius(x, y, z) {
+  return Math.sqrt(Math.pow(x, 2) + Math.pow(y, 2) + Math.pow(z, 2));
+}
+
+function getInclination(z, r) {
+  return Math.acos(z / r);
+}
+
+// had to use atan2 instead of atan so the browser can recognize the quadrant
+function getAzimuth(y, x) {
+  return Math.atan2(y, x);
+}
+
+function updateRadius(n, delta) {
+  var vertex = line.geometry.vertices[n];
+  var [i, j, k] = vertex.orig;
+
+  var radius = 100 * delta;
+  var inclination = getInclination(k, radius);
+  var azimuth = getAzimuth(j, i)
+
+  vertex.x = radius * Math.sin(inclination) * Math.cos(azimuth);
+  vertex.y = radius * Math.sin(inclination) * Math.sin(azimuth);
+  vertex.z = radius * Math.cos(inclination);
+}
+
+function updateRadius2(n, delta) {
+  var vertex = line.geometry.vertices[n];
+  var [x, y] = vertex.orig;
+
+  var radius = 100 * delta;
+  // var inclination = getInclination(k, radius);
+  // var azimuth = getAzimuth(j, i)
+
+  vertex.x = radius * Math.sin(x) * Math.cos(y);
+  vertex.y = radius * Math.sin(x) * Math.sin(y);
+  vertex.z = radius * Math.cos(x);
+}
+
+animate()
+
+function animate() {
+  requestAnimationFrame(animate);
+  renderer.render(scene, camera);
+}
+
+function jiggle2() {
+  for (let i=0; i<line.geometry.vertices.length; i++) {
+    updateRadius(i, (Math.random()-.5)/10 + 1)
+  }
+  geometry.verticesNeedUpdate = true;
+  requestAnimationFrame(jiggle2)
+}
+
+function cycle(val = 1.2, step = 0) {
+  if (step < line.geometry.vertices.length) {
+    updateRadius2(step, val)
+    line.geometry.verticesNeedUpdate = true
+    setTimeout(function() {
+      cycle(val, step + 1)
+    }, 0)
+  }
+}
+
+function explode() {
+  for (let i=0; i<line.geometry.vertices.length; i++) {
+    updateRadius(i, 10)
+  }
+  geometry.verticesNeedUpdate = true;
+}
+
+
+</script>
+</html>

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<title>Distorting Sphere - Fill</title>
+<style>
+  body {
+    font-family: Monospace;
+    margin: 0px;
+    overflow: hidden;
+  }
+  .scene-container {
+    position: absolute;
+    left: 0px;
+    top: 0px;
+  }
+</style>
+
+<script src="../js/three.min.js"></script>
+<script src="../js/OrbitControls.js"></script>
+
+<div class="scene-container"></div>
+
+<script>
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const analyser = audioCtx.createAnalyser();
+const dataArray = new Uint8Array(analyser.fftSize);
+
+navigator.getUserMedia (
+  {audio: true},
+  function(stream) {
+     audioCtx.createMediaStreamSource(stream).connect(analyser);
+  },
+  function(err) {
+    console.log('The following gUM error occured: ' + err);
+  }
+);
+
+const scene = new THREE.Scene();
+
+const renderer = new THREE.WebGLRenderer();
+renderer.setClearColor(0xffffff);
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 1, 10000);
+camera.position.set(0, 0, 500);
+
+const helper = new THREE.GridHelper( 2000, 100 );
+helper.position.y = - 199;
+helper.material.opacity = 0.25;
+helper.material.transparent = true;
+
+const light = new THREE.SpotLight(0xffffff, 1.5);
+light.position.set(0, 1500, 0);
+light.castShadow = true;
+light.shadow = new THREE.LightShadow(new THREE.PerspectiveCamera(70, 1, 200, 2000));
+
+const planeGeometry = new THREE.PlaneGeometry(2000, 2000);
+planeGeometry.rotateX(-Math.PI / 2);
+const planeMaterial = new THREE.ShadowMaterial({opacity: 0.2});
+const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+plane.position.y = -200;
+plane.receiveShadow = true;
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+document.querySelector(".scene-container").appendChild(renderer.domElement);
+
+const sphere = THREE.SceneUtils.createMultiMaterialObject( 
+  new THREE.SphereGeometry(100, 16, 16), 
+  [
+    new THREE.MeshLambertMaterial({
+      color: 0x00ddaa,
+      transparent: true,
+      opacity: 1,
+    }),
+    new THREE.MeshBasicMaterial({
+      color: 0xaaaaaa, 
+      wireframe: true
+    })
+  ]
+);
+sphere.castShadow = true;
+
+scene.add(camera)
+    .add(light)
+    .add(new THREE.AmbientLight(0xffffff))
+    .add(plane)
+    .add(helper)
+    .add(sphere);  
+
+animate()
+
+function animate() {
+  requestAnimationFrame(animate);
+  renderer.render(scene, camera);
+}
+
+const origVertices = []
+const fill = sphere.children[0].geometry
+const mesh = sphere.children[1].geometry
+const vertCount = fill.vertices.length;
+
+for (let vertex of fill.vertices) {
+  origVertices.push({x: vertex.x, y: vertex.y, z: vertex.z})
+}
+
+let drawArray = []
+
+let axis = "x"
+let axisCount = 0
+
+streamJiggle();
+
+function getRadius(x, y, z) {
+  return Math.sqrt(Math.pow(x || 1, 2) + Math.pow(y || 1, 2) + Math.pow(z || 1, 2));
+}
+
+function getInclination(z, r) {return Math.acos(z / r)}
+
+// has to use atan2 so the browser can recognize the quadrant
+function getAzimuth(y, x) {return Math.atan2(y, x)}
+
+function streamJiggle() {
+  analyser.getByteTimeDomainData(dataArray);
+  drawArray = [...dataArray, ...drawArray].slice(0, vertCount)
+
+  for (let i=0; i<vertCount; i++) {
+    var thisVal = drawArray[i] - 128
+
+    var [newX, newY, newZ] = updateRadius(i, thisVal)
+
+
+    fill.vertices[i].x = mesh.vertices[i].x = newX
+    fill.vertices[i].y = mesh.vertices[i].y = newY
+    fill.vertices[i].z = mesh.vertices[i].z = newZ
+
+  }
+
+  fill.verticesNeedUpdate = true;
+  mesh.verticesNeedUpdate = true;
+  requestAnimationFrame(streamJiggle)
+}
+
+function updateRadius(i, newRadius) {
+
+  var x = origVertices[i].x
+  var y = origVertices[i].y
+  var z = origVertices[i].z
+
+  var radius = getRadius(x, y, z) + Math.abs(newRadius)
+  var theta = getInclination(z, radius)
+  var phi = getAzimuth(y, x)
+
+  var newX = radius * Math.sin(theta) * Math.cos(phi);
+  var newY = radius * Math.sin(theta) * Math.sin(phi);
+  var newZ = radius * Math.cos(theta);
+
+  return [newX, newY, newZ]
+}
+</script>

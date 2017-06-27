@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html>
+<title>3D Lissajous and Rhodonea - Spheres</title>
+<meta charset="utf-8">
+<style>
+  body {
+    font-family: Monospace;
+    margin: 0px;
+    overflow: hidden;
+  }
+  details {
+    position: absolute;
+    left: 10px;
+    top: 10px;
+  }
+  .left, .right, details{
+    z-index: 9;
+  }
+  .right {
+    position: absolute;
+    right: 10px;
+    top: 10px;
+  }
+  .left {
+    display: flex;
+    flex-flow: column wrap;
+  }
+  .oscillator, .right {
+    background-color: rgba(255, 255, 255, .75);
+    box-shadow: 0px 0px 5px rgb(200, 200, 200);
+    margin: 5px;
+    padding: 5px;
+  }
+  .summary {
+    padding: 5px;    
+  }
+  button, .right label, select {
+    display: block;
+    margin-top: 5px;
+  }
+  .scene-container {
+    position: absolute;
+    left: 0px;
+    top: 0px;
+  }
+</style>
+
+<script src="../js/three.min.js"></script>
+<script src="../js/OrbitControls.js"></script>
+
+<template class="oscillator-template">
+  <div class="oscillator">
+    <div class="title"></div>
+    <div class="frequency"><div></div>
+      <input type="range" min="1" max="30" step="1" name="freq">
+    </div>
+    <div class="amplitude"><div></div>
+      <input type="range" value="100" name="amp">
+    </div>
+    <div class="phase"><div></div>
+      <input type="range" value="0" name="phase">
+    </div>
+    <div class="offset">Phase: <text></text>°</div>
+    <button class="phase-reset">Reset Phase</button>
+  </div>
+</template>
+
+<div class="oscillator-container">
+  <details open>
+    <summary class="oscillator summary">Oscillators</summary>
+    <div class="left"></div>
+  </details>
+  <div class="right">
+    <div class="volume">Volume:</div>
+    <input  type="range" min="0" max="100" value="20" 
+            oninput="updateVolume(this.value)">
+    <button onclick="controls.reset()">Recenter camera</button>
+    <button onclick="freezePhase(this)">Stop Phase</button>
+    <select class="class-select" onchange="curve = this.value; t = 0; renderLoop()">
+      <option value="rhodonea">Rhodonea Curve</option>
+      <option value="lissajous">Lissajous Curve</option>
+    </select>
+    <label>
+      <input  type="checkbox"
+              onchange="renderer.setClearColor(this.checked ? 0x000000 : 0xffffff)
+                        light.castShadow = !this.checked
+                        renderLoop()" 
+              checked>
+      Dark
+    </label>
+    <label>
+      <input  type="checkbox"
+              onchange="helper.visible = this.checked; renderLoop()" 
+              checked>
+      Helper Grid
+    </label>
+  </div>
+</div>  
+
+<div class="scene-container"></div>
+
+<script>
+let t = 1;
+let paused = false;
+let freeze = false;
+let curve = "rhodonea";
+
+// const count = 720;
+// const count = 2880;
+const count = 1440;
+const objs = [];
+
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const gainNode = audioCtx.createGain();
+gainNode.connect(audioCtx.destination);
+updateVolume(20);
+
+const real = new Float32Array(3000);
+const imag = new Float32Array(3000);
+
+const mainOsc = audioCtx.createOscillator();
+mainOsc.connect(gainNode);
+mainOsc.frequency.value = 1;
+mainOsc.start();
+
+// set dimension for the left side flex container
+document.querySelector(".left").style.height = innerHeight * .9 + "px";
+
+// create the oscillators and controls using Oscillator() as a constructor
+const template = document.querySelector(".oscillator-template")
+    .content.querySelector(".oscillator");
+const oscs = ["x", "y", "z"].map(Oscillator);
+
+// create the scene
+const scene = new THREE.Scene();
+
+const renderer = new THREE.WebGLRenderer({antialias: true});
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 1, 10000);
+camera.position.set(0, 0, 500);
+
+const helper = new THREE.GridHelper(2000, 100);
+helper.position.y = -199;
+helper.material.opacity = 0.25;
+helper.material.transparent = true;
+
+const light = new THREE.SpotLight(0xffffff, 1.5);
+light.position.set(0, 1500, 0);
+light.castShadow = true;
+light.shadow = new THREE.LightShadow(new THREE.PerspectiveCamera(70, 1, 200, 2000));
+
+const planeGeometry = new THREE.PlaneGeometry(2000, 2000);
+planeGeometry.rotateX(-Math.PI / 2);
+const planeMaterial = new THREE.ShadowMaterial({opacity: 0.2});
+const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+plane.position.y = -200;
+plane.receiveShadow = true;
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableKeys = false;
+controls.addEventListener("change", function() {if (paused) renderLoop()});
+
+document.querySelector(".scene-container").appendChild(renderer.domElement);
+
+
+scene.add(camera)
+    .add(helper)
+    .add(new THREE.AmbientLight(0xf0f0f0))
+    .add(light)
+    .add(plane);
+
+loadPoints()
+
+// fire the render loop
+renderLoop();
+
+
+
+
+// for creating the oscs and storing their values in a central location
+function Oscillator(axis) {
+  const self = {};
+
+  const newOsc = document.importNode(template, true);
+  newOsc.querySelector(".title").innerHTML = axis + "-Axis";
+
+  const [fText, fInput] = newOsc.querySelector(".frequency").children;
+  const [aText, aInput] = newOsc.querySelector(".amplitude").children;
+  const [pText, pInput] = newOsc.querySelector(".phase").children;
+  fInput.value = Math.ceil(Math.random() * 10);
+
+  self.freq = Number(fInput.value);
+  self.amp = Number(aInput.value);
+  self.phase = Number(pInput.value);
+  self.offsetText = newOsc.querySelector(".offset text");
+  self.offset = 0;
+  
+  fInput.oninput = updateOsc;
+  aInput.oninput = updateOsc;
+  pInput.oninput = updateOsc;
+  
+  newOsc.querySelector(".phase-reset").onclick = function() {
+    pInput.value = 0;
+    self.phase = 0;
+    self.offset = 0;
+    t = 0;
+    updateOsc();
+  }
+
+  updateOsc();
+  document.querySelector(".left").appendChild(newOsc);
+
+  return self;
+
+  function updateOsc() {   
+    if (this.name) {
+      self[this.name] = Number(this.value);
+      if (this.name !== "phase") t = 0;
+    }
+    fText.innerHTML = "Frequency: " + self.freq + "00Hz";
+    aText.innerHTML = "Amplitude: " + self.amp + "%";
+    pText.innerHTML = "Phase Rate: " + self.phase + "%";
+    if (paused) renderLoop();
+  }
+}
+
+function loadPoints() {
+  for (let n=0; n<count; n++) {
+    objs[n] = new THREE.Mesh(
+      new THREE.SphereBufferGeometry(n === 0 ? 8 : 4, 16, 16), 
+      new THREE.MeshStandardMaterial({
+        color: n % 10 === 0 ? 0x999999 : 0xff4444
+      })
+    );
+    objs[n].castShadow = true;
+
+    scene.add(objs[n]);  
+    objs[n].position.set(0, 0, 0)
+  }  
+}
+
+
+// for generating the custom audio wave
+function generatePeriodicWave() {
+  real.fill(0);
+  imag.fill(0);
+
+  for (let osc of oscs) {
+    if (osc.amp !== 0) {
+      const shift = 2 * Math.PI * osc.offset;
+      real[osc.freq * 100] += -Math.sin(shift * 2) * osc.amp/100;
+      imag[osc.freq * 100] += Math.cos(shift * 2) * osc.amp/100;
+    }
+  }
+  
+  const customWave = audioCtx.createPeriodicWave(real, imag, {disableNormalization: true});
+  mainOsc.setPeriodicWave(customWave)
+}
+
+// the render loop
+function renderLoop() {
+  if (paused) paused = false;
+  t = t < .3 ? t + .01 : 1;
+
+  if (!freeze) for (let osc of oscs) {
+      osc.offset = (osc.offset + osc.phase/5000) % 1;
+      osc.offsetText.innerHTML = Math.round(osc.offset * 360);
+    }
+  
+  for (let i=0; i<count; i++) {
+    const angle = i / count * Math.PI * 2;
+    let x = getCoord(angle, oscs[0], oscs[1], "sin");
+    let y = getCoord(angle, oscs[1], oscs[0], "cos");
+    let z = getCoord(angle, oscs[2], oscs[1], "sin");
+
+    if (t < .3) {
+      objs[i].position.x = tween(objs[i].position.x, x);
+      objs[i].position.y = tween(objs[i].position.y, y);
+      objs[i].position.z = tween(objs[i].position.z, z);
+    } else {
+      objs[i].position.x = x;
+      objs[i].position.y = y;
+      objs[i].position.z = z;
+    }
+  }
+
+  generatePeriodicWave();
+  renderer.render(scene, camera);
+
+  // save some processor by only re-firing the render loop if needed
+  if (t < 1 || 
+    !freeze && oscs[0].phase || oscs[1].phase || oscs[2].phase) {
+    requestAnimationFrame(renderLoop);
+  } else {
+    paused = true;
+  }
+}
+
+function getCoord(angle, a, b, func) {
+  let offset = a.offset * Math.PI * 2;
+
+  if (curve === "lissajous") {
+    return a.amp * Math.sin(angle * a.freq + offset);
+  } else {
+    return a.amp * 
+      Math[func](angle * a.freq + offset) * 
+      Math.cos(angle * b.freq + offset);
+  }
+}
+
+function theta(n, offsetVal) {
+  return (((n + (offsetVal * count/360)) % count) / count) * Math.PI * 2;  
+}
+
+function tween(oldVal, newVal) {
+  return oldVal * (1-t) + newVal * t;
+}
+
+function freezePhase(freezeDiv) {
+  freeze = !freeze;
+  freezeDiv.innerHTML = freeze ? "Start Phase"  : "Pause Phase";
+  if (paused) renderLoop();
+}
+
+function updateVolume(val) {
+  document.querySelector(".volume").innerHTML = "Volume: " + val + "%";
+  gainNode.gain.value = val/1000;
+}
+</script>
+</html>

@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>2D-Harmonograph</title>
+<style>
+  body {
+    font-family: Monospace;
+    margin:0px;
+  }
+  canvas {
+    position: absolute; 
+    top: 0px; 
+    left: 0px; 
+    z-index: -2;
+  }
+  details {
+    position: absolute;
+    left: 10px;
+    top: 10px;
+  }
+  .left, .right, details{
+    z-index: 9;
+  }
+  .left {
+    display: flex;
+    flex-flow: column wrap;
+  }
+  .oscillator {
+    background-color: rgba(255, 255, 255, .75);
+    box-shadow: 0px 0px 5px rgb(200, 200, 200);
+    margin: 5px;
+    padding: 5px;
+  }
+  h3 {
+    margin: 5px;
+  }
+  .summary {
+    padding: 5px;    
+  }
+  .controller {
+    background-color: rgba(255, 255, 255, .75);
+    box-shadow: 0px 0px 5px rgb(200, 200, 200);
+    margin: 5px;
+    padding: 10px;
+  }
+</style>
+
+<body>
+<template class="controller-template">
+  <div class="controller">
+    <h3 class="title"></h3>
+    <div class="frequency"><div></div>
+      <input type="range" min="1" max="30" step="1" name="freq">
+    </div>
+    <div class="damping"><div></div>
+      <input type="range" min="0.001" max="0.05" step="0.0001" value="0.001" name="damping">
+    </div>
+    <div class="amplitude"><div></div>
+      <input type="range" value="100" name="amp">
+    </div>
+    <div class="phase"><div></div>
+      <input type="range" value="0" name="phase">
+    </div>
+    <div class="offset">Phase: <text></text>°</div>
+    <button class="phase-reset">Reset Phase</button>
+  </div>
+</template>
+
+<div class="controller-container">
+  <details open>
+    <summary class="oscillator summary">Oscillators</summary>
+    <div class="left"></div>
+  </details>
+</div>
+
+<canvas></canvas>
+
+<script>
+const canvas = document.querySelector('canvas');
+canvas.setAttribute('width',innerWidth);
+canvas.setAttribute('height',innerHeight);
+
+const canvasCtx = canvas.getContext("2d");
+canvasCtx.fillStyle = 'rgb(255, 255, 255)';
+canvasCtx.strokeStyle = '#003300';
+canvasCtx.lineWidth = .5;
+
+const width = innerWidth;
+const height = innerHeight;
+
+let dataLength = 500;
+let paused = false;
+
+// set dimension for the left side flex container
+document.querySelector(".left").style.height = innerHeight * .9 + "px";
+
+const template = document.querySelector('.controller-template')
+    .content.querySelector(".controller");
+
+const oscVals = [
+  {key: "x1", f: 1, d: 0.004, p: 0, a: 100}, 
+  {key: "x2", f: 3, d: 0.007, p: 0, a: 100}, 
+  {key: "y1", f: 5, d: 0.008, p: 8, a: 100}, 
+  {key: "y2", f: 7, d: 0.019, p: 24, a: 100},
+]
+
+const oscs = oscVals.map(Oscillator);
+
+renderLoop()
+
+function Oscillator(vals) {
+  const self = {};
+
+  const newOsc = document.importNode(template, true);
+  newOsc.querySelector(".title").innerHTML = vals.key;
+  
+  const [fText, fInput] = newOsc.querySelector(".frequency").children;
+  const [dText, dInput] = newOsc.querySelector(".damping").children;
+  const [aText, aInput] = newOsc.querySelector(".amplitude").children;
+  const [pText, pInput] = newOsc.querySelector(".phase").children;
+
+  self.freq = vals.f;
+  self.damping = vals.d;
+  self.amp = vals.a;
+  self.phase = vals.p;
+  self.offsetText = newOsc.querySelector(".offset text");
+  self.offset = 0;
+
+  fInput.value = self.freq;
+  dInput.value = self.damping;
+  aInput.value = self.amp;
+  pInput.value = self.phase;
+
+  fInput.oninput = updateOsc;
+  dInput.oninput = updateOsc;
+  aInput.oninput = updateOsc;
+  pInput.oninput = updateOsc;
+
+  newOsc.querySelector(".phase-reset").onclick = function() {
+    pInput.value = 0;
+    self.phase = 0;
+    self.offset = 0;
+    t = 0;
+    updateOsc();
+  }
+
+  self.getVal = function(t = 0) {
+    return (
+      self.amp * 
+      Math.sin(t * self.freq + self.offset * Math.PI*2) * 
+      Math.exp(-self.damping * t)
+    );
+  }
+
+  updateOsc();
+
+  document.querySelector(".left").appendChild(newOsc);
+
+  return self;
+
+  function updateOsc() {   
+    if (this.name) self[this.name] = Number(this.value);
+
+    fText.innerHTML = "Frequency: " + self.freq + "00Hz";
+    dText.innerHTML = "Damping: " + self.damping;
+    aText.innerHTML = "Amplitude: " + self.amp + "%";
+    pText.innerHTML = "Phase Rate: " + self.phase + "%";
+
+    if (paused) renderLoop();
+  }
+}
+
+function harmonograph(n, offset, controls) {
+  let val = 0;
+  for (let i of controls) val += oscs[i].getVal(n);
+  return val * 1.5 + offset/2;
+}
+
+function renderLoop() {
+  if (paused) paused = false;
+
+  for (let osc of oscs) {
+    osc.offset = (osc.offset + osc.phase/5000) % 1;
+    osc.offsetText.innerHTML = Math.round(osc.offset * 360);
+  }
+
+  draw();
+
+  requestAnimationFrame(renderLoop);
+}
+
+function draw() {
+  canvasCtx.fillRect(0, 0, innerWidth, innerHeight);
+  canvasCtx.beginPath();
+  
+  let i = dataLength;
+  
+  canvasCtx.moveTo(
+    harmonograph(i, innerWidth, [0, 1]), 
+    harmonograph(i, innerHeight, [2, 3])
+    );
+
+  while (i >= 0) {
+    canvasCtx.lineTo(
+      harmonograph(i, innerWidth, [0, 1]), 
+      harmonograph(i, innerHeight, [2, 3])
+      );
+    i -= .01;
+  }
+  canvasCtx.stroke();
+
+}
+</script>

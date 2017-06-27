@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html>
+<meta charset="utf-8">
+<title>3D Harmonograph</title>
+<style>
+  body {
+    font-family: Monospace;
+    margin: 0px;
+    overflow: hidden;
+  }
+  details {
+    position: absolute;
+    left: 10px;
+    top: 10px;
+  }
+  .left, .right, details{
+    z-index: 9;
+  }
+  .right {
+    position: absolute;
+    right: 10px;
+    top: 10px;
+  }
+  .left {
+    display: flex;
+    flex-flow: column wrap;
+  }
+  .oscillator {
+    background-color: rgba(255, 255, 255, .75);
+    box-shadow: 0px 0px 5px rgb(200, 200, 200);
+    margin: 5px;
+    padding: 5px;
+  }
+  .summary {
+    padding: 5px;    
+  }
+  button, .right label {
+    display: block;
+    margin-top: 5px;
+  }
+  .scene-container {
+    position: absolute;
+    left: 0px;
+    top: 0px;
+  }
+</style>
+<script src="../js/three.min.js"></script>
+<script src="../js/OrbitControls.js"></script>
+
+<template class="oscillator-template">
+  <div class="oscillator">
+    <div>Axes: </div>
+    <div class="axes">
+      <label><input class="x" type="checkbox"> X </label>
+      <label><input class="y" type="checkbox"> Y </label>
+      <label><input class="z" type="checkbox"> Z </label>
+    </div>
+    <div class="frequency">
+      <div>Frequency: <text></text>Hz</div>
+      <input type="range" min="1" max="30" step=".5">
+    </div>
+    <div class="damping">
+      <div>Damping: <text></text></div>
+      <input type="range" min="0.001" max="0.05" step="0.001" value="0.001">
+    </div>
+    <div class="amplitude">
+      <div>Amplitude: <text></text>%</div>
+      <input type="range" value="100">
+    </div>
+    <div class="phase">
+      <div>Phase Rate: <text></text>%</div>
+      <input type="range" value="0">
+    </div>
+    <div class="offset">Phase: <text></text>°</div>
+    <button class="phase-reset">Reset Phase</button>
+  </div>
+</template>
+
+<div class="oscillator-container">
+  <details open>
+    <summary class="oscillator summary">Oscillators</summary>
+    <div class="left"></div>
+  </details>
+  <div class="right oscillator">
+    <div class="volume">Volume: 10%</div>
+    <div>
+      <input type="range" value="10" oninput="updateVolume(this.value)">
+    </div>
+    <button onclick="controls.reset()">Recenter Camera</button>
+    <button onclick="addOscillator()">Add New Oscillator</button>
+    <button onclick="freezePhase(this)">Stop Phase</button>
+    <div class="line-length-text">Line Length: 40,000</div>
+    <div>
+      <input class="line-length" type="range" min="10" max="99" value="40" oninput="updateLength(this.value)">
+    </div>
+    <label><input type="checkbox"
+                  onchange="renderer.setClearColor(this.checked ? 0x000000 : 0xffffff); 
+                            renderer.render(scene, camera)" 
+                  checked> Dark</label>
+    <label><input type="checkbox"
+                  onchange="helper.visible = this.checked; 
+                            renderer.render(scene, camera)" 
+                  checked> Helper Grid</label>
+    <label><input type="color" value="#0055aa" 
+                  oninput="material.setValues({color: this.value}); 
+                          renderer.render(scene, camera)"> Line Color</label>
+  </div>
+</div>  
+
+<div class="scene-container"></div>
+
+<script>
+
+document.querySelector(".left").style.height = innerHeight * .9 + "px"
+
+///////////////////////////////////////////////////////////////////////////////
+// global variables
+///////////////////////////////////////////////////////////////////////////////
+
+let count = 40000;
+let t = 0;
+let paused = false;
+let freeze = false;
+
+///////////////////////////////////////////////////////////////////////////////
+// initialize the web audio
+///////////////////////////////////////////////////////////////////////////////
+
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const gainNode = audioCtx.createGain();
+gainNode.gain.value = 0.01;
+gainNode.connect(audioCtx.destination);
+
+const real = new Float32Array(3000);
+const imag = new Float32Array(3000);
+
+const mainOsc = audioCtx.createOscillator();
+mainOsc.connect(gainNode);
+mainOsc.frequency.value = 1;
+mainOsc.start();
+
+
+///////////////////////////////////////////////////////////////////////////////
+// create the oscs using Oscillator() as a constructor
+///////////////////////////////////////////////////////////////////////////////
+
+const template = document.querySelector('.oscillator-template')
+    .content.querySelector(".oscillator");
+
+const oscs = [];
+for (let i=0; i<3; i++) oscs.push(Oscillator())
+
+
+///////////////////////////////////////////////////////////////////////////////
+// create the three.js scene and global variables
+///////////////////////////////////////////////////////////////////////////////
+
+const scene = new THREE.Scene();
+const renderer = new THREE.WebGLRenderer();
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 1, 10000);
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+const helper = new THREE.GridHelper(2000, 100);
+
+controls.enableKeys = false;
+controls.position0.z = 500;
+
+addSceneElements();
+
+
+///////////////////////////////////////////////////////////////////////////////
+// create the line and add it to the scene
+///////////////////////////////////////////////////////////////////////////////
+
+const geometry = new THREE.BufferGeometry();
+const material = new THREE.LineBasicMaterial({color: "#0055aa"});
+const line = new THREE.Line(geometry, material);
+let positions = new Float32Array(count * 3);
+
+line.castShadow = true
+geometry.addAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+scene.add(line)
+
+
+///////////////////////////////////////////////////////////////////////////////
+// load the points and start the animation loop
+///////////////////////////////////////////////////////////////////////////////
+
+loadPoints()
+animate();
+
+
+///////////////////////////////////////////////////////////////////////////////
+// for creating the oscs and storing their values in a central location
+///////////////////////////////////////////////////////////////////////////////
+
+function Oscillator(i = oscs.length) {
+  const newOscillator = document.importNode(template, true);
+  
+  const self = {};
+
+  // axes to be effected by this oscillator 
+  const x = newOscillator.querySelector(".axes .x")
+  self.x = x.checked = i % 3 === 0;
+  
+  const y = newOscillator.querySelector(".axes .y")
+  self.y = y.checked = i % 3 === 1;
+
+  const z = newOscillator.querySelector(".axes .z")
+  self.z = z.checked = i % 3 === 2;
+
+  [x, y, z].map(function(d) {
+    d.onchange = function() {shouldMute(this)}
+  })
+
+  // frequency
+  const fInput = newOscillator.querySelector(".frequency input")
+  const fText = newOscillator.querySelector(".frequency text")
+  self.freq = fInput.value = Math.ceil(Math.random() * 10)
+  fText.innerHTML = self.freq * 100
+  
+  fInput.oninput = function() {
+    self.freq = +this.value
+    fText.innerHTML = self.freq *100
+    t = 0
+    if (paused) animate()
+  }
+
+  // damping
+  const dInput = newOscillator.querySelector(".damping input")
+  const dText = newOscillator.querySelector(".damping text")
+  self.damp = dText.innerHTML = +dInput.value
+
+  dInput.oninput = function() {
+    self.damp = dText.innerHTML = +this.value
+    t = 0
+    if (paused) animate()
+  }
+      
+  // amplitude
+  const aInput = newOscillator.querySelector(".amplitude input")
+  const aText = newOscillator.querySelector(".amplitude text")
+  self.amp = aText.innerHTML = +aInput.value
+  
+  aInput.oninput = function() {
+    self.amp = aText.innerHTML = +this.value
+    t = 0
+    if (paused) animate()
+  }
+  
+  // phase
+  const pInput = newOscillator.querySelector(".phase input")
+  const pText = newOscillator.querySelector(".phase text")
+  self.phase = +pInput.value
+  pText.innerHTML = self.phase
+
+  self.offsetText = newOscillator.querySelector(".offset text")
+  self.offset = 0
+
+  pInput.oninput = function() {
+    self.phase = +this.value
+    pText.innerHTML = self.phase
+    if (paused) animate()
+  }
+
+  newOscillator.querySelector(".phase-reset").onclick = function() {
+    pInput.value = 0;
+    self.phase = 0;
+    pText.innerHTML = 0;
+    self.offset = 0;
+    t = 0
+    if (paused) animate()
+  }
+
+  shouldMute()
+
+  document.querySelector(".left").appendChild(newOscillator);
+
+  function shouldMute(axis) {
+    if (axis) {
+      self[axis.className] = axis.checked; 
+      t = 0
+      if (paused) animate()
+    }
+
+    if (self.x || self.y || self.z) {
+      aInput.disabled = false
+      aInput.value = self.amp
+      aText.innerHTML = self.amp
+    } else {
+      aInput.disabled = true
+      aInput.value = 0
+      aText.innerHTML = 0
+    }
+  }
+
+  return self
+}
+
+
+///////////////////////////////////////////////////////////////////////////////
+// add the scene elements
+///////////////////////////////////////////////////////////////////////////////
+
+function addSceneElements() {
+  // the camera
+  camera.position.set(0, 0, 500);
+
+  // the spot light to cast the shadow
+  const light = new THREE.SpotLight(0xffffff, 1.5);
+  light.position.set(0, 1500, 0);
+  light.castShadow = true;
+  light.shadow = new THREE.LightShadow(new THREE.PerspectiveCamera(70, 1, 200, 2000));
+
+  // the plane for the shadow
+  const planeGeometry = new THREE.PlaneGeometry(2000, 2000);
+  planeGeometry.rotateX(-Math.PI / 2);
+  const planeMaterial = new THREE.ShadowMaterial({opacity: 0.2});
+
+  const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+  plane.position.y = -200;
+  plane.receiveShadow = true;
+
+  // the grid to help with orientation 
+  helper.position.y = - 199;
+  helper.material.transparent = true;
+  helper.material.opacity = 0.25;
+
+  renderer.setClearColor(0xffffff);
+  renderer.setPixelRatio(devicePixelRatio);
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.setClearColor(0x000000);
+  renderer.shadowMap.enabled = true;
+
+  document.querySelector(".scene-container").appendChild(renderer.domElement);
+
+  scene.add(camera)
+      .add(light)
+      .add(plane)
+      .add(helper);
+}
+
+
+///////////////////////////////////////////////////////////////////////////////
+// create and update the vertices
+///////////////////////////////////////////////////////////////////////////////
+
+function loadPoints() {
+  const appliedX = oscs.filter(function(d) {return d.x})
+  const appliedY = oscs.filter(function(d) {return d.y})
+  const appliedZ = oscs.filter(function(d) {return d.z})
+
+  for (let i=0; i<count; i++) {
+    positions[i*3] = tween(t, getCoords(i/500, appliedX), positions[i*3])
+    positions[i*3 + 1] = tween(t, getCoords(i/500, appliedY), positions[i*3 + 1])
+    positions[i*3 + 2] = tween(t, getCoords(i/500, appliedZ), positions[i*3 + 2])
+  }  
+
+  // tweening function for smooth transitions
+  function tween(i, newVal, oldVal) {
+    return i >= 1 ? newVal : oldVal * (1-i) + newVal * i
+  }
+
+  // helper function for calculating coordinates
+  function getCoords(n, controlVals) {
+    let result = 0
+    for (let b of controlVals) {
+      result += b.amp * Math.sin(n*b.freq + b.offset*Math.PI*2) * Math.exp(-b.damp * 5 * n)
+    }
+    return result
+  }
+}
+
+
+///////////////////////////////////////////////////////////////////////////////
+// the animation loop
+///////////////////////////////////////////////////////////////////////////////
+
+function animate() {
+  paused = false
+
+  t = t < 1 ? t + .1 : 1;
+
+  if (!freeze) {
+    for (let oscillator of oscs) {
+      oscillator.offset = (oscillator.offset + oscillator.phase/5000) % 1;
+      oscillator.offsetText.innerHTML = Math.round(oscillator.offset * 360)
+    }
+  }
+
+  geometry.removeAttribute('position')
+  loadPoints()
+  geometry.addAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+  generatePeriodicWave()
+  renderer.render(scene, camera);
+
+  // only re-fire the render loop if t < 1 or if any of the phases > 0
+  if (t < 1 || oscs.filter(function(d) {return d.phase}).length) {
+    requestAnimationFrame(animate);
+  } else {
+    paused = true;
+  }
+}
+
+
+///////////////////////////////////////////////////////////////////////////////
+// generate the periodic wave (works kinda like an IFFT
+// this was used instead of manually manipulating an audio buffer, since that
+// was really slow. and instead of using individual oscillators so that it can 
+// phase multiples of the same frequency
+///////////////////////////////////////////////////////////////////////////////
+
+function generatePeriodicWave() {
+  real.fill(0);
+  imag.fill(0);
+
+  for (let osc of oscs) {
+    if (osc.amp !== 0) {
+      const shift = 2 * Math.PI * osc.offset;
+      real[osc.freq * 100] += -Math.sin(shift * 2) * osc.amp/100;
+      imag[osc.freq * 100] += Math.cos(shift * 2) * osc.amp/100;
+    }
+  }
+  
+  const customWave = audioCtx.createPeriodicWave(real, imag, {disableNormalization: true});
+  mainOsc.setPeriodicWave(customWave)
+}
+
+
+///////////////////////////////////////////////////////////////////////////////
+// some functions for updating the number of vertices, adjusting the master 
+// volume control, starting/stopping the phase, etc.
+///////////////////////////////////////////////////////////////////////////////
+
+function addOscillator() {
+  oscs.push(new Oscillator())
+  t = 0;
+  if (paused) animate()
+}
+
+function updateVolume(val) {
+  document.querySelector(".volume").innerHTML = "Volume: " + val + "%";
+  gainNode.gain.value = val/1000;
+}
+
+function updateLength(val) {
+  document.querySelector(".line-length-text").innerHTML = "Line Length: " + val + ",000";
+  count = val * 1000;
+  positions = new Float32Array(count * 3)
+  if (paused) animate()
+}
+
+function freezePhase(freezeDiv) {
+  freeze = !freeze;
+  freezeDiv.innerHTML = freeze ? 'Start Phase'  : 'Pause Phase'
+}
+
+controls.addEventListener('change', function() {if (paused) animate()});
+
+///////////////////////////////////////////////////////////////////////////////
+// a listener for updating the scene when the window is resized
+///////////////////////////////////////////////////////////////////////////////
+
+window.addEventListener('resize', onWindowResize, false);
+
+function onWindowResize(){
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+}
+</script>
+</html>

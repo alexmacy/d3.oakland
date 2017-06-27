@@ -1,0 +1,64 @@
+<!-- 
+visualizing time series data from the audio buffer using a radial line
+-->
+<!DOCTYPE html>
+<title>Radial Line - Dark</title>
+<script src="../js/d3.v4.min.js"></script>
+<body style="margin: 0px">
+  <canvas></canvas>
+</body>
+<script>
+const width = innerWidth;
+const height = innerHeight;
+
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const analyser = audioCtx.createAnalyser();
+
+const dataArray = new Uint8Array(analyser.fftSize);
+const drawLength = dataArray.length/2;
+let drawArray = [];
+
+const canvas = document.querySelector('canvas');
+canvas.setAttribute('width',width);
+canvas.setAttribute('height',height);
+
+const canvasCtx = canvas.getContext("2d");
+canvasCtx.fillStyle = 'rgba(0, 0, 0, 1)';
+canvasCtx.strokeStyle = 'rgb(255, 0, 0)';
+canvasCtx.lineWidth = 1;
+canvasCtx.translate(width/2, height/2);
+
+navigator.getUserMedia (
+  {audio: true},
+  function(stream) {
+    audioCtx.createMediaStreamSource(stream).connect(analyser);
+    draw();
+  },
+  function(err) {
+    console.log('The following gUM error occured: ' + err);
+  }
+);
+
+const radialLine = d3.radialLine()
+    .curve(d3.curveBasis)
+    .angle(function(d, i) {
+      return i / (drawLength / 2) * Math.PI * 2
+    })
+    .radius(function(d, i) {
+      return Math.abs(drawArray[i] - 128) / 128 * Math.min(height, width/2)
+    })
+    .context(canvasCtx);
+
+function draw() {
+  canvasCtx.fillRect(-width/2, -height/2, width, height);
+
+  analyser.getByteTimeDomainData(dataArray);
+  drawArray = [...Array.from(dataArray), ...drawArray].slice(0, drawLength);
+
+  canvasCtx.beginPath();
+  radialLine(drawArray);
+  canvasCtx.stroke();
+
+  requestAnimationFrame(draw);
+};
+</script>

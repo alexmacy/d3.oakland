@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>2D Lissajous Curve</title>
+<style>
+  body {
+    font-family: Monospace;
+    margin:0px;
+  }
+  canvas {
+    position: absolute; 
+    top: 0px; 
+    left: 300px; 
+    z-index: -2;
+  }
+  .controller {
+    background-color: rgba(255, 255, 255, .75);
+    box-shadow: 0px 0px 5px rgb(200, 200, 200);
+    margin: 5px;
+    padding: 10px;
+    z-index: 9;
+    display: inline-block;
+  }
+</style>
+
+<div class="controller">
+  <div class="a">
+    <div>a: <text></text></div>
+    <input type="range" max="10" step=".1" value=".4" oninput="a = +this.value">
+  </div>
+  <div class="b">
+    <div>b: <text></text></div>
+    <input type="range" max="10" step=".1" value=".6" oninput="b = +this.value">
+  </div>  
+  <label>
+    <input type="checkbox" class="checkbox" onchange="rotate = !rotate" checked>
+    Phase 
+  </label>
+</div>
+
+<canvas></canvas>
+
+<script>
+const width = innerWidth;
+const height = innerHeight;
+
+const scale = Math.min(width, height)/3;
+
+const canvas = document.querySelector('canvas');
+canvas.width = width;
+canvas.height = height;
+
+const canvasCtx = canvas.getContext('2d');
+canvasCtx.fillStyle = 'rgb(255, 255, 255)';
+canvasCtx.strokeStyle = 'rgb(37, 37, 109)';
+canvasCtx.lineWidth = .01;
+
+let a = .4, b = .6, offset = 0, rotate = true;
+
+draw();
+
+function draw() {
+  if (rotate) offset += .005;
+
+  document.querySelector(".a text").innerHTML = a;
+  document.querySelector(".b text").innerHTML = b;
+
+  canvasCtx.fillRect(0, 0, width, height);
+
+  let i = 10000;
+  
+  canvasCtx.beginPath();
+  while (i--) canvasCtx.lineTo(...calcPoint(a, b, i));
+  canvasCtx.stroke();
+
+  window.requestAnimationFrame(draw);
+}
+
+function calcPoint(a, b, i) {
+  const x = Math.sin(a*i + offset) * scale + width/3;
+  const y = Math.sin(b*i) * scale + height/2;
+  return [x, y];
+}
+</script>

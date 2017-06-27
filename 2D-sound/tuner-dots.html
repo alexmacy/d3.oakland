@@ -1,0 +1,72 @@
+<!--
+circles acting like bars on an audio spectrum analyzer
+-->
+<!DOCTYPE html>
+<html>
+<title>Spectrum - Dots</title>
+<style>
+  body {
+    margin: 0px; 
+    overflow: hidden;
+  }
+</style>
+<script src="../js/d3.v4.min.js"></script>
+<canvas></canvas>
+<script>
+const width = innerWidth;
+const height = innerHeight;
+
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const analyser = audioCtx.createAnalyser();
+const dataArray = new Uint8Array(analyser.fftSize/2);
+
+const canvas = document.querySelector('canvas');
+canvas.setAttribute('width',width);
+canvas.setAttribute('height',height);
+
+const canvasCtx = canvas.getContext("2d");
+canvasCtx.fillStyle = 'rgb(0, 0, 0)';
+canvasCtx.strokeStyle = 'rgb(255, 255, 255)';
+canvasCtx.lineWidth = .1;
+
+const x = d3.scaleLinear()
+    .domain([0, 1024])
+    .range([50, width - 55]);
+
+const y = d3.scaleLinear()
+    .domain([0, 255])
+    .range([height - 55, 50]);
+
+const colors = d3.scaleLinear()
+    .domain([0, 100])
+    .range(['black', 'red']);    
+
+navigator.getUserMedia (
+  {audio: true},
+  function(stream) {
+    audioCtx.createMediaStreamSource(stream).connect(analyser);
+    draw();
+  },
+  function(err) {
+    console.log('The following gUM error occured: ' + err);
+  }
+);
+
+function draw() {
+  analyser.getByteFrequencyData(dataArray)
+
+  canvasCtx.fillStyle = 'rgba(0, 0, 0, .2)';
+  canvasCtx.fillRect(0, 0, width, height);
+
+  for (let i in dataArray) {
+    canvasCtx.beginPath();
+    canvasCtx.fillStyle = colors(dataArray[i]);
+    canvasCtx.arc(x(i), y(dataArray[i]), 2, 0, 2*Math.PI);
+    canvasCtx.fill();
+    canvasCtx.stroke();
+  }
+
+  requestAnimationFrame(draw);
+}
+</script>
+</html>

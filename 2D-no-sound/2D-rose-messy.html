@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<title>2D Rhodonea w/ Four Inputs</title>
+<style>
+  body {
+    font-family: Monospace;
+    margin:0px;
+  }
+  canvas {
+    position: absolute; 
+    top: 0px; 
+    left: 0px; 
+    z-index: -2;
+  }
+  .controller {
+    background-color: rgba(255, 255, 255, .75);
+    box-shadow: 0px 0px 5px rgb(200, 200, 200);
+    margin: 5px;
+    padding: 10px;
+    z-index: 9;
+    display: inline-block;
+  }
+</style>
+
+<div class="controller">
+  <div class="a">
+    <div>a: <text></text></div>
+    <input type="range" min="1" max="20" oninput="a = +this.value; t = 0">
+  </div>
+  <div class="b">
+    <div>b: <text></text></div>
+    <input type="range" min="1" max="20" oninput="b = +this.value; t = 0">
+  </div>  
+  <div class="c">
+    <div>c: <text></text></div>
+    <input type="range" min="1" max="20" oninput="c = +this.value; t = 0">
+  </div>  
+  <div class="d">
+    <div>d: <text></text></div>
+    <input type="range" min="1" max="20" oninput="d = +this.value; t = 0">
+  </div>  
+</div>
+
+<canvas></canvas>
+
+<script>
+const canvas = document.querySelector('canvas');
+      canvas.setAttribute('width',innerWidth);
+      canvas.setAttribute('height',innerHeight);
+
+const canvasCtx = canvas.getContext("2d");
+      canvasCtx.fillStyle = 'rgb(255, 255, 255)';
+      canvasCtx.strokeStyle = 'rgb(255, 0, 0)';
+      canvasCtx.lineWidth = .5;
+
+const length = 7200;
+let t = 1;
+
+
+let a = Math.ceil(Math.random() * 20);
+let b = Math.ceil(Math.random() * 20);
+let c = Math.ceil(Math.random() * 20);
+let d = Math.ceil(Math.random() * 20);
+
+document.querySelectorAll("input[type=range]")[0].value = a;
+document.querySelectorAll("input[type=range]")[1].value = b;
+document.querySelectorAll("input[type=range]")[2].value = c;
+document.querySelectorAll("input[type=range]")[3].value = d;
+
+let oldA, oldB, oldC, oldD;
+
+update();
+
+function update() {
+  requestAnimationFrame(update);
+
+  canvasCtx.fillRect(0, 0, innerWidth, innerHeight);
+
+  document.querySelector(".a text").innerHTML = a;
+  document.querySelector(".b text").innerHTML = b;
+  document.querySelector(".c text").innerHTML = c;
+  document.querySelector(".d text").innerHTML = d;
+  
+
+  canvasCtx.beginPath();
+
+  let i = length;
+  while (i--) {
+    const oldX =  getVal(oldA, i, "sin") + getVal(oldB, i, "sin") + 
+                  getVal(oldC, i, "sin") + getVal(oldD, i, "sin");
+
+    const oldY =  getVal(oldA, i, "cos") + getVal(oldB, i, "cos") + 
+                  getVal(oldC, i, "cos") + getVal(oldD, i, "cos");
+
+    const x = getVal(a, i, "sin") + getVal(b, i, "sin") + 
+              getVal(c, i, "sin") + getVal(d, i, "sin");
+
+    const y = getVal(a, i, "cos") + getVal(b, i, "cos") + 
+              getVal(c, i, "cos") + getVal(d, i, "cos");
+
+    canvasCtx.lineTo(tween(oldX, x) + innerWidth/2, tween(oldY, y) + innerHeight/2);
+  }
+
+  canvasCtx.stroke();  
+
+  t = t >= 1 ? 1 : t + .2;
+
+  if (t === 1) [oldA, oldB, oldC, oldD] = [a, b, c, d];
+}
+
+function getVal(val, n, func) {
+  return  Math[func](2 * Math.PI * val * n / length) * Math.min(innerWidth, innerHeight) / 10;
+}
+
+function tween(oldVal, newVal) {
+  return oldVal * (1 - t) + newVal * t;
+}
+</script>

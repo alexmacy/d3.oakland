@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<title>3D Spheres - With Sound</title>
+<style>
+  body {
+    font-family: Monospace;
+    margin: 0px;
+    overflow: hidden;
+  }
+  button{
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 9;
+  }
+</style>
+
+<script src="../js/three.min.js"></script>
+<script src="../js/OrbitControls.js"></script>
+
+<button onclick="controls.reset()">Recenter camera</button>
+
+<div class="scene-container"></div>
+
+<script>
+const objs = [];
+const origVals = [] 
+let count = 0;
+
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const analyser = audioCtx.createAnalyser();
+
+navigator.getUserMedia (
+  {audio: true},
+  function(stream) {
+     audioCtx.createMediaStreamSource(stream).connect(analyser);
+  },
+  function(err) {
+    console.log('The following gUM error occured: ' + err);
+  }
+);
+
+const scene = new THREE.Scene();
+
+const renderer = new THREE.WebGLRenderer();
+renderer.setClearColor(0x000000);
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 1, 10000);
+camera.position.set(0, 0, 500);
+
+const helper = new THREE.GridHelper( 2000, 100 );
+helper.position.y = - 199;
+helper.material.opacity = 0.25;
+helper.material.transparent = true;
+
+const light = new THREE.SpotLight(0xffffff, 1.5);
+light.position.set(0, 1500, 0);
+light.castShadow = true;
+light.shadow = new THREE.LightShadow(new THREE.PerspectiveCamera(70, 1, 200, 2000));
+
+const planeGeometry = new THREE.PlaneGeometry(2000, 2000);
+planeGeometry.rotateX(-Math.PI / 2);
+const planeMaterial = new THREE.ShadowMaterial({opacity: 0.2});
+const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+plane.position.y = -200;
+plane.receiveShadow = true;
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+document.querySelector(".scene-container").appendChild(renderer.domElement);
+
+scene.add(camera)
+    .add(light)
+    .add(new THREE.AmbientLight(0xf0f0f0))
+    .add(plane)
+    .add(helper);  
+
+for (let x=-16; x<16; x++) {
+  for (let y=-16; y<16; y++) {
+    const theta = (x/16) * (Math.PI)
+    const phi = (y/32) * (Math.PI)
+
+    origVals[count] = [theta, phi]
+
+    objs[count] = new THREE.Mesh(
+      new THREE.SphereBufferGeometry(5, 16, 16), 
+      new THREE.MeshStandardMaterial({
+        color: count % 10 === 0 ? 0x999999 : 0xff4444
+      })
+    )
+    objs[count].castShadow = true
+    scene.add(objs[count])
+    count++
+  }
+}
+
+analyser.fftSize = count;
+const dataArray = new Uint8Array(count);
+
+animate()
+
+function animate() {
+  analyser.getByteTimeDomainData(dataArray);
+
+  for (let i in dataArray) {
+    const deltaVal = dataArray[i]-128
+    updateRadius(i, Math.abs(deltaVal) < 1 ? 10 : deltaVal/128 * 200)
+  }
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+}
+
+function updateRadius(n, delta) {
+  const [theta, phi] = origVals[n]
+  const radius = 1 * delta;
+
+  objs[n].position.x = radius * Math.sin(theta) * Math.cos(phi);
+  objs[n].position.y = radius * Math.sin(theta) * Math.sin(phi);
+  objs[n].position.z = radius * Math.cos(theta);
+}
+</script>

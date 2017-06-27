@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html>
+<title>3D Harmonograph - With Sound</title>
+<meta charset="utf-8">
+<style>
+  body {
+    font-family: Monospace;
+    margin: 0px;
+    overflow: hidden;
+  }
+  .right{
+    position: absolute;
+    right: 10px;
+    top: 10px;
+    z-index: 9;
+  }
+  .controller {
+    background-color: rgba(255, 255, 255, .75);
+    box-shadow: 0px 0px 5px rgb(200, 200, 200);
+    margin: 5px;
+    padding: 10px;
+  }
+  button, label {
+    display: block;
+    margin: 5px;
+  }
+  .scene-container {
+    position: absolute;
+    left: 0px;
+    top: 0px;
+  }
+</style>
+
+<script src="../js/three.min.js"></script>
+<script src="../js/OrbitControls.js"></script>
+
+<div class="controller-container">
+  <div class="right controller">
+    <button onclick="controls.reset()">Recenter Camera</button>
+    <label><input type="checkbox" class="dark" checked> Dark</label>
+    <label><input type="checkbox" class="helper" checked> Helper Grid</label>
+    <label><input type="color" value="#0055aa" 
+                  oninput="material.setValues({color: this.value}); 
+                          renderer.render(scene, camera)"> Line Color</label>
+  </div>
+</div>  
+
+<div class="scene-container"></div>
+
+<script>
+///////////////////////////////////////////////////////////////////////////////
+// global variables
+///////////////////////////////////////////////////////////////////////////////
+
+// number of vertices in the line
+let count = 10000;
+
+
+///////////////////////////////////////////////////////////////////////////////
+// initialize the web audio
+///////////////////////////////////////////////////////////////////////////////
+
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const gainNode = audioCtx.createGain();
+gainNode.gain.value = 20/1000;
+
+const get_user_media =  navigator.getUserMedia || 
+                      navigator.webkitGetUserMedia || 
+                      navigator.mozGetUserMedia;
+
+///////////////////////////////////////////////////////////////////////////////
+// set up the bins for the frequencies
+///////////////////////////////////////////////////////////////////////////////
+
+const C0 = 316.3525; // C0 note, in Hz.
+const test_frequencies = [];
+const notes = []
+let sorted = []
+
+for (let i=1; i<=12; i++) {
+  notes.push({note: i, value: 0})
+  sorted.push({note: i, value: 0})
+}
+
+for (let i=0; i<100; i++) {
+  const thisFreq = C0 * Math.pow(2, i/12);
+  test_frequencies.push({freq: thisFreq, step: i%12});
+  test_frequencies.push({freq: thisFreq * Math.pow(2, 1 / 48), step: i%12});
+  test_frequencies.push({freq: thisFreq * Math.pow(2, -1 / 48), step: i%12});
+}
+
+get_user_media.call(navigator, {"audio": true}, use_stream, function() {});
+
+
+///////////////////////////////////////////////////////////////////////////////
+// create the three.js scene and global variables
+///////////////////////////////////////////////////////////////////////////////
+const scene = new THREE.Scene();
+const renderer = new THREE.WebGLRenderer();
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 1, 10000);
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+const helper = new THREE.GridHelper(2000, 100);
+let plane;
+controls.enableKeys = false;
+controls.position0.z = 500;
+addSceneElements();
+
+
+///////////////////////////////////////////////////////////////////////////////
+// create the line and add it to the scene
+///////////////////////////////////////////////////////////////////////////////
+const geometry = new THREE.BufferGeometry();
+const material = new THREE.LineBasicMaterial({ 
+  color: 0x0055aa, 
+  transparent: true,
+  opacity: .5,
+});
+const line = new THREE.Line(geometry, material);
+line.castShadow = true
+
+let positions = new Float32Array(count * 3);
+geometry.addAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+scene.add(line)
+
+
+///////////////////////////////////////////////////////////////////////////////
+// load the points and start the animation loop
+///////////////////////////////////////////////////////////////////////////////
+loadPoints()
+// animate();
+
+
+///////////////////////////////////////////////////////////////////////////////
+// add the scene elements
+///////////////////////////////////////////////////////////////////////////////
+function addSceneElements() {
+  // the camera
+  camera.position.set(0, 0, 500);
+
+  // the spot light to cast the shadow
+  const light = new THREE.SpotLight(0xffffff, 1.5);
+  light.position.set(0, 1500, 0);
+  light.castShadow = true;
+  light.shadow = new THREE.LightShadow(new THREE.PerspectiveCamera(70, 1, 200, 2000));
+
+  // the plane for the shadow
+  const planeGeometry = new THREE.PlaneGeometry(2000, 2000);
+  planeGeometry.rotateX(-Math.PI / 2);
+  const planeMaterial = new THREE.ShadowMaterial({opacity: 0.2});
+
+  plane = new THREE.Mesh(planeGeometry, planeMaterial);
+  plane.position.y = -200;
+  plane.receiveShadow = true;
+
+  // the grid to help with orientation 
+  helper.position.y = - 199;
+  helper.material.transparent = true;
+  helper.material.opacity = 0.25;
+
+  renderer.setClearColor(0xffffff);
+  renderer.setPixelRatio(devicePixelRatio);
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.shadowMap.enabled = true;
+
+  document.querySelector(".scene-container").appendChild(renderer.domElement);
+
+  scene.add(camera)
+      .add(light)
+      // .add(new THREE.AmbientLight(0xf0f0f0))
+      .add(plane)
+      .add(helper);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// create and update the vertices
+///////////////////////////////////////////////////////////////////////////////
+function loadPoints() {
+  for (let i=0; i<count; i++) {
+    positions[i*3] = harmonograph(i, 0, [0, 3, 6, 9])
+    positions[i*3 + 1] = harmonograph(i, 0, [1, 4, 7, 10])
+    positions[i*3 + 2] = harmonograph(i, 0, [2, 5, 8, 11])
+  }  
+}
+
+
+function innerHarmon(t, c) {
+  // return (Math.min(c.value, 10)) * (Math.sin(((t)*c.note) + (0*Math.PI*2)) * Math.exp(-.01 * t))
+  return (Math.min(c.value, 10)/2) * (Math.sin(((t)*c.note)))
+  // return c.value/total*2 * (Math.sin(((t)*c.note)))
+}
+
+function harmonograph(t, offset, controls) {
+  return controls.reduce(function(a, b) {
+    return a + innerHarmon(t, sorted[b])
+  }, 0) * 10 + offset
+}
+
+
+
+///////////////////////////////////////////////////////////////////////////////
+// the animation loop
+///////////////////////////////////////////////////////////////////////////////
+function animate() {
+  // requestAnimationFrame(animate);
+  geometry.removeAttribute('position')
+  loadPoints()
+  geometry.addAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+  helper.visible = document.querySelector(".helper").checked
+  const dark = document.querySelector(".dark").checked
+  renderer.setClearColor(dark ? 0x000000 : 0xffffff);
+  line.castShadow = !dark;
+
+  renderer.render(scene, camera);
+}
+
+function use_stream(stream) {
+  const audio_context = new AudioContext();
+  const source = audio_context.createMediaStreamSource(stream);
+  const script_processor = audio_context.createScriptProcessor(1024, 1, 1);
+
+  script_processor.connect(audio_context.destination);
+  source.connect(script_processor);
+
+  const sample_length_ms = 10;
+  let buffer = [];
+  let recording = true;
+
+  // Need to leak this function into the global namespace so it doesn't get
+  // prematurely garbage-collected.
+  // http://lists.w3.org/Archives/Public/public-audio/2013JanMar/0304.html
+  window.capture_audio = function(event) {
+    buffer.push(...Array.prototype.slice.call(event.inputBuffer.getChannelData(0)));
+
+    // Stop recording after sample_length_ms.
+    if (buffer.length > sample_length_ms * audio_context.sampleRate / 1000) {
+      recording = false;
+
+      notes.map(d => d.value = 0)
+
+      // 2pi * frequency gives the appropriate period to sine.
+      // timeseries index / sample_rate gives the appropriate time coordinate.
+      const scale_factor = 2 * Math.PI / audio_context.sampleRate;
+
+      for (let f of test_frequencies) {
+        // for (let t = 0; t < buffer.length; t++) {
+        //   const real = buffer[t] * Math.cos(scale_factor * f.freq * t);
+        //   const imaginary = buffer[t] * Math.sin(scale_factor * f.freq * t);
+          
+        //   notes[f.step].value += Math.pow(real, 2) + Math.pow(imaginary, 2);
+        // }
+        // notes[f.step].value = buffer.reduce()
+        for (let t = 0; t < buffer.length; t++) {
+          const real = buffer[t] * Math.cos(scale_factor * f.freq * t);
+          const imaginary = buffer[t] * Math.sin(scale_factor * f.freq * t);
+          
+          notes[f.step].value += Math.pow(real, 2) + Math.pow(imaginary, 2);
+        }
+      };
+    
+      sorted = notes.sort((a, b) => b.value - a.value)
+
+      animate()
+
+      buffer = [];
+      requestAnimationFrame(function() {recording = true;});
+    }
+  };
+  script_processor.onaudioprocess = window.capture_audio;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// a listener for updating the scene when the window is resized
+///////////////////////////////////////////////////////////////////////////////
+window.addEventListener( 'resize', onWindowResize, false );
+function onWindowResize(){
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+}
+</script>
+</html>

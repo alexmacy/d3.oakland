@@ -1,0 +1,102 @@
+<!--
+drawing an harmonograph style figure using frequency data that has been binned in a way that is more friendly to the visualization.
+-->
+<html>
+<title>2D Harmonograph</title>
+<canvas></canvas>
+<script>
+const width = innerWidth;
+const height = innerHeight;
+const maxVal = Math.min(width, height) / 4;
+
+const canvas = document.querySelector('canvas');
+canvas.setAttribute('width', width);
+canvas.setAttribute('height', height);
+
+const canvasCtx = canvas.getContext("2d");
+canvasCtx.fillStyle = 'rgb(255, 255, 255)';
+canvasCtx.strokeStyle = 'rgb(255, 0, 0)';
+canvasCtx.lineWidth = .02;
+
+const C0 = 316.3525; // C0 note, in Hz.
+const frequencies = [];
+const notes = [];
+let sorted
+
+const sample_length_ms = 10;
+
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+for (let i=1; i<=12; i++) notes.push({note: i, value: 0})
+
+for (let i=0; i<100; i++) {
+  const thisFreq = C0 * Math.pow(2, i / 12);
+  frequencies.push({freq: thisFreq, step: i % 12});
+  frequencies.push({freq: thisFreq * Math.pow(2, 1 / 48), step: i % 12});
+  frequencies.push({freq: thisFreq * Math.pow(2, -1 / 48), step: i % 12});
+}
+
+navigator.getUserMedia (
+  {audio: true},
+  use_stream,
+  function(err) {
+    console.log('The following gUM error occured: ' + err);
+  }
+);
+
+function use_stream(stream) {
+  const source = audioCtx.createMediaStreamSource(stream);
+  const script_processor = audioCtx.createScriptProcessor(1024, 1, 1);
+
+  script_processor.connect(audioCtx.destination);
+  source.connect(script_processor);
+
+  script_processor.onaudioprocess = capture_audio;
+}
+
+function capture_audio(event) {
+  let buffer = Array.prototype.slice.call(event.inputBuffer.getChannelData(0));
+
+  // Stop recording after sample_length_ms.
+  if (buffer.length > sample_length_ms * audioCtx.sampleRate / 1000) {
+    notes.map(function(d) {return d.value = 0});
+
+    const scale_factor = 2 * Math.PI / audioCtx.sampleRate;
+
+    for (let f of frequencies) {
+      for (let t = 0; t < buffer.length; t++) {
+        const real = buffer[t] * Math.cos(scale_factor * f.freq * t);
+        const imag = buffer[t] * Math.sin(scale_factor * f.freq * t);
+        notes[f.step].value += Math.pow(real, 2) + Math.pow(imag, 2);
+      }
+    };
+  
+    sorted = notes.sort(function(a, b) {return b.value - a.value});
+    update()
+  }
+};
+
+function update() {
+  canvasCtx.fillRect(0, 0, width, height);
+  canvasCtx.beginPath();
+  let t = 10000;
+  while (t) {
+    const x = harmonograph(t, width / 2, [0, 2, 4, 6, 8])
+    const y = harmonograph(t, height / 2, [1, 3, 5, 7, 9])
+    canvasCtx.lineTo(x, y)
+    t--;
+  }
+  canvasCtx.stroke();  
+}
+
+function harmonograph(t, offset, controls) {
+  let coord = 0
+  for (let c of controls) coord += helper(t, sorted[c])
+  return coord * 20 + offset
+
+  function helper(t, c) {
+    return Math.min(c.value, maxVal) / 40 * Math.sin(t * c.note)
+  }
+}
+</script>
+</html>

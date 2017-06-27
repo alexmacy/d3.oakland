@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<title>Distorting Sphere - Wireframe</title>
+<style>
+  body {
+    font-family: Monospace;
+    margin: 0px;
+    overflow: hidden;
+  }
+  .scene-container {
+    position: absolute;
+    left: 0px;
+    top: 0px;
+  }
+</style>
+
+<script src="../js/three.min.js"></script>
+<script src="../js/OrbitControls.js"></script>
+
+<div class="scene-container"></div>
+
+<script>
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const analyser = audioCtx.createAnalyser();
+const dataArray = new Uint8Array(analyser.fftSize);
+
+navigator.getUserMedia (
+  {audio: true},
+  function(stream) {
+     audioCtx.createMediaStreamSource(stream).connect(analyser);
+  },
+  function(err) {
+    console.log('The following gUM error occured: ' + err);
+  }
+);
+
+const scene = new THREE.Scene();
+
+const renderer = new THREE.WebGLRenderer();
+renderer.setClearColor(0x000000);
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 1, 10000);
+camera.position.set(0, 0, 500);
+
+const helper = new THREE.GridHelper( 2000, 100 );
+helper.position.y = - 199;
+helper.material.opacity = 0.25;
+helper.material.transparent = true;
+
+const light = new THREE.SpotLight(0xffffff, 1.5);
+light.position.set(0, 1500, 0);
+light.castShadow = true;
+light.shadow = new THREE.LightShadow(new THREE.PerspectiveCamera(70, 1, 200, 2000));
+
+const planeGeometry = new THREE.PlaneGeometry(2000, 2000);
+planeGeometry.rotateX(-Math.PI / 2);
+const planeMaterial = new THREE.ShadowMaterial({opacity: 0.2});
+const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+plane.position.y = -200;
+plane.receiveShadow = true;
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+document.querySelector(".scene-container").appendChild(renderer.domElement);
+
+const sphere = new THREE.Mesh(
+  new THREE.SphereGeometry(100, 32, 32), 
+  new THREE.MeshStandardMaterial({
+    color: 0xff0000,
+    wireframe: true
+  })
+);
+sphere.castShadow = true;
+
+scene.add(camera)
+    .add(light)
+    .add(new THREE.AmbientLight(0xf0f0f0))
+    .add(plane)
+    .add(helper)
+    .add(sphere);  
+
+animate()
+
+function animate() {
+  requestAnimationFrame(animate);
+  renderer.render(scene, camera);
+}
+
+const origVertices = []
+const count = sphere.geometry.vertices.length;
+
+for (let vertex of sphere.geometry.vertices) {
+  origVertices.push({x: vertex.x, y: vertex.y, z: vertex.z})
+}
+
+let drawArray = []
+
+let axis = "x"
+let axisCount = 0
+
+streamJiggle();
+
+function streamJiggle() {
+  analyser.getByteTimeDomainData(dataArray);
+  drawArray = [...Array.from(dataArray), ...drawArray].slice(0, count)
+
+  for (let i=0; i<count; i++) {
+    let thisVal = drawArray[i]
+    thisVal -= 128
+
+    sphere.geometry.vertices[i][axis] = origVertices[i][axis] + thisVal
+
+    if (axisCount >= 1000) {
+      axisCount = 0
+      if (axis === "x") axis = "y";
+      else if (axis === "y") axis = "z";
+      else axis = "x";  
+    } else {
+      axisCount += 1;
+    }
+  }
+
+  sphere.geometry.verticesNeedUpdate = true;
+  requestAnimationFrame(streamJiggle)
+}
+</script>

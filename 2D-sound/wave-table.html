@@ -1,0 +1,268 @@
+<!--
+Tried building the sound wave by manually calculating the audio buffer, but timing the updates is problematic. 
+This is in part because it is a lot of data to process on the fly (which can be partially resolved by using something like turbo.js to offload the processing to the gpu), but also because it's virtually impossible to sync the waves on each cycle.
+Also can't really use an IFFT because that doesn't allow for a very simple solution regarding multiple oscillators on the same frequency, but with different offsets
+-->
+<!DOCTYPE html>
+<html>
+<title>Wave Table</title>
+<style>
+  body {
+    margin: 0px; 
+    display: flex;
+  } 
+  path {
+    fill: none;
+    stroke: black;
+    stroke-width: 1;
+  }
+  svg {
+    border: 1px solid steelblue;
+    margin: 10px;
+    margin-left: 5px;
+    flex-grow: 2;
+  }
+  button {
+    margin: 5px;
+  }
+  .controls {
+    margin: 10px;
+    margin-right: 5px;
+    padding-left: 5px;
+    padding-right: 5px;
+    overflow-y: scroll;
+    border: 1px solid steelblue;
+  }
+  .title {
+    margin-right: 30px;
+    font-weight: bold;
+  }
+</style>
+<script src="../js/d3.v4.min.js"></script>
+
+<template class="oscillator-template">
+  <div class="oscillator">
+    <div>
+      <text class="title"></text>
+      <label><input class="mute" type="checkbox" checked>mute</label>
+    </div>
+    <div class="frequency">
+      <input type="range" min="20" max="999" value="220" name="freq"><text></text>
+    </div>
+    <div class="amplitude">
+      <input type="range" min="0" max="100" value="100" name="amp"><text></text>
+    </div>
+    <div class="phase">
+      <input type="range" min="0" max="100" value="0" name="phase"><text></text>
+    </div>
+    <div class="offset">
+      <input type="range" min="0" max="100" value="0" name="offset"><text></text>
+    </div>
+  </div>
+</template>
+
+<div class="controls">
+  <div>
+    <button onclick="randomize()">Random Wave</button>
+  </div>
+  <div>
+    <button onclick="randomize(true)">Random Wave (lower frequency)</button>
+  </div>
+</div>
+<svg></svg>
+<script>
+var test = [];
+
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const sampleRate = 22100;
+const svgWaveData = d3.range(sampleRate / 40);
+
+const real = new Float32Array(1000);
+const imag = new Float32Array(1000);
+
+const mainOsc = audioCtx.createOscillator();
+const gainNode = audioCtx.createGain();
+gainNode.connect(audioCtx.destination);
+gainNode.gain.value = -.8;
+
+mainOsc.connect(audioCtx.destination);
+mainOsc.connect(gainNode);
+mainOsc.frequency.value = 1;
+mainOsc.start();
+
+window.addEventListener('resize', onWindowResize, false);
+
+function onWindowResize(){
+  width = svg.property("clientWidth");
+  x.range([0, width]);
+  mainWave.attr("d", wave);
+}
+
+
+
+const height = innerHeight - 20;
+d3.select(".controls").style("height", height + "px");
+      
+const svg = d3.select("svg")
+    .attr("height", height);
+
+let width = svg.property("clientWidth");
+
+// scales
+const x = d3.scaleLinear()
+    .range([0, width])
+    .domain([0, sampleRate / 40]);
+
+const y = d3.scaleLinear()
+    .range([height - 60, 60])
+    .domain([-1, 1]);
+
+const wave = d3.line()
+    .curve(d3.curveMonotoneX)
+    .x(function (d, i) {return x(i)})
+    .y(function (d, i) {return y(d3.sum(oscs, function(d) {return getVal(i, d)}))});
+
+const mainWave = svg.append("g")
+    .attr("class", "mainWave")
+  .append("path")
+    .datum(svgWaveData)
+    .style("stroke", "red")
+    .style("stroke-width", 2);
+
+const indivWaves = svg.append("g")
+    .attr("class", "indivWaves");
+
+const oscs = []
+for (let i=0; i<10; i++) oscs.push(Oscillator(i))
+
+mainWave.attr("d", wave);
+
+function generatePeriodicWave() {
+  real.fill(0);
+  imag.fill(0);
+
+  for (let osc of oscs) {
+    if (!osc.mute && osc.amp !== 0) {
+      const shift = 2 * Math.PI * osc.offset/100;
+      real[osc.freq] += -Math.sin(shift) * osc.amp/100;
+      imag[osc.freq] += Math.cos(shift) * osc.amp/100;
+    }
+  }
+  
+  mainOsc.setPeriodicWave(audioCtx.createPeriodicWave(real, imag,{disableNormalization: true})
+);
+}
+
+function Oscillator(i) {
+  const self = {}
+  
+  const template = document.querySelector(".oscillator-template")
+      .content.querySelector(".oscillator");
+
+  const newOsc = document.importNode(template, true);
+
+  newOsc.querySelector(".title").innerHTML = "Wave " + (i + 1)
+
+  // create the individual controls 
+  const mInput = newOsc.querySelector(".mute");
+  const [fInput, fText] = newOsc.querySelector(".frequency").children;
+  const [aInput, aText] = newOsc.querySelector(".amplitude").children;
+  const [pInput, pText] = newOsc.querySelector(".phase").children;
+  const [oInput, oText] = newOsc.querySelector(".offset").children;
+
+  self.mute = true;
+  self.freq = Number(fInput.value);
+  self.amp = Number(aInput.value);
+  self.phase = Number(pInput.value);
+  self.offset = Number(oInput.value);
+
+  mInput.onchange = updateInput;
+  fInput.oninput = updateInput;
+  aInput.oninput = updateInput;
+  oInput.oninput = updateInput;
+  
+  pInput.oninput = function() {
+    const active = self.phase > 0;
+    const newPhase = Number(this.value);
+    self.phase = newPhase;
+    if (!active) phaseLoop();
+  }
+
+  const thisWaveFunc = d3.line()
+      .curve(d3.curveMonotoneX)
+      .x(function (d, i) {return x(i)})
+      .y(function(d, i) {return y(self.mute ? 0 : getVal(i, self))});
+
+  const thisWave = indivWaves.append("path")
+      .datum(svgWaveData)
+      .style("stroke-dasharray", [5, 5])
+      .style("stroke", "#e9e9e9")
+      .style("stroke-width", 1);
+
+  newOsc.onmouseover = function() {thisWave.style("stroke", "steelblue")};
+  newOsc.onmouseout = function() {thisWave.style("stroke", "#e9e9e9")};
+
+  self.randomize = function(lowFreqs = null) {
+    mInput.checked = Math.random() > .5;
+    self.freq = Math.floor(Math.random() * (lowFreqs ? 200 : 900)) + 100;
+    self.amp = Math.floor(Math.random() * 100);
+    self.offset = Math.floor(Math.random() * 100);
+    const activePhase = self.phase > 0;
+    self.phase = Math.floor(Math.random() * 100)
+    if (!activePhase) phaseLoop();
+    updateOsc();
+  }
+
+  document.querySelector(".controls").appendChild(newOsc);
+
+  updateOsc();
+
+  return self;
+
+  function phaseLoop() {
+    self.offset = (self.offset + self.phase/100) % 100;
+    if (self.phase > 0) requestAnimationFrame(phaseLoop);
+    updateOsc();
+    mainWave.attr("d", wave);
+    generatePeriodicWave()
+  }
+
+  function updateOsc() {
+    self.mute = mInput.checked;
+    
+    fText.innerHTML = "Frequency: " + self.freq + "Hz";
+    aText.innerHTML = "Amplitude: " + self.amp + "%";
+    pText.innerHTML = "Phase Rate: " + self.phase + "%";
+    oText.innerHTML = "Offset: " + Math.round(self.offset) + "%";
+
+    fInput.value = self.freq;
+    aInput.value = self.amp;
+    pInput.value = self.phase;
+    oInput.value = self.offset;
+
+    if (self.mute || self.amp <= 0) {
+      thisWave.style("visibility", "hidden").attr("d", null);
+    } else {
+      thisWave.style("visibility", "visible").attr("d", thisWaveFunc);
+    }
+  }
+
+  function updateInput() {
+    if (this.name) self[this.name] = Number(this.value);
+    updateOsc();
+    mainWave.attr("d", wave);
+    generatePeriodicWave()
+  }
+}
+
+function randomize(range = false) {
+  for (let osc of oscs) osc.randomize(range);
+  mainWave.attr("d", wave);
+    generatePeriodicWave()
+}
+
+function getVal(i, osc) {
+  if (osc.mute) return 0;
+  return (Math.sin(2*Math.PI * ((i+osc.offset) / (sampleRate/osc.freq))) / 2) * osc.amp / 500;
+}
+</script>

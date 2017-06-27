@@ -1,0 +1,63 @@
+<!-- 
+visualizing time series data from the audio buffer using rotating ellipses
+-->
+<!DOCTYPE html>
+<title>Rotating Ellipses v3</title>
+<script src="../js/d3.v4.min.js"></script>
+<body style="margin: 0px">
+  <canvas></canvas>
+</body>
+<script>  
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const analyser = audioCtx.createAnalyser();
+
+const canvas = document.querySelector('canvas');
+canvas.setAttribute('width', innerWidth);
+canvas.setAttribute('height', innerHeight);
+
+const canvasCtx = canvas.getContext("2d");
+canvasCtx.fillStyle = 'rgb(0, 0, 0)';
+canvasCtx.strokeStyle = 'rgb(255, 0, 0)';
+canvasCtx.lineWidth = 1;
+
+const dataArray = new Uint8Array(analyser.frequencyBinCount);
+const volScale = d3.scaleLog().domain([1, 30, 400]).range([0, 0, innerHeight])
+
+navigator.getUserMedia (
+  {audio: true},
+  function(stream) {
+    audioCtx.createMediaStreamSource(stream).connect(analyser);
+    draw();
+  },
+  function(err) {
+    console.log('The following gUM error occured: ' + err);
+  }
+);
+
+function draw() {
+  canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+  analyser.getByteTimeDomainData(dataArray);
+  for(let i = 0; i < dataArray.length; i++) {
+    if (dataArray[i] === 127) continue;
+
+    const thisVol = volScale(Math.abs(dataArray[i] - 128))
+    const thisRotation = i/dataArray.length * Math.PI
+    
+    canvasCtx.beginPath();
+    
+    canvasCtx.ellipse(
+      canvas.width/2,
+      canvas.height/2,
+      thisVol/2 + 1,
+      thisVol + 1,
+      thisRotation,
+      0, 
+      2 * Math.PI
+    );
+
+    canvasCtx.stroke();
+  }
+  requestAnimationFrame(draw);
+};
+</script>

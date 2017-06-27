@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<title>3D Vertices - With Sound</title>
+<style>
+  body {
+    font-family: Monospace;
+    margin: 0px;
+    overflow: hidden;
+  }
+  .scene-container {
+    position: absolute;
+    left: 0px;
+    top: 0px;
+  }
+</style>
+
+<script src="../js/three.min.js"></script>
+<script src="../js/OrbitControls.js"></script>
+
+<div class="scene-container"></div>
+
+<script>
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const analyser = audioCtx.createAnalyser();
+
+let drawArray = [];
+
+navigator.getUserMedia (
+  {audio: true},
+  function(stream) {
+     audioCtx.createMediaStreamSource(stream).connect(analyser);
+  },
+  function(err) {
+    console.log('The following gUM error occured: ' + err);
+  }
+);
+
+// create the three.js scene and global variables
+const scene = new THREE.Scene();
+
+const renderer = new THREE.WebGLRenderer();
+renderer.setClearColor(0xffffff);
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 1, 10000);
+camera.position.set(0, 0, 500);
+
+const helper = new THREE.GridHelper( 2000, 100 );
+helper.position.y = - 199;
+helper.material.opacity = 0.25;
+helper.material.transparent = true;
+
+const light = new THREE.SpotLight(0xffffff, 1.5);
+light.position.set(0, 1500, 0);
+light.castShadow = true;
+light.shadow = new THREE.LightShadow(new THREE.PerspectiveCamera(70, 1, 200, 2000));
+
+const planeGeometry = new THREE.PlaneGeometry(2000, 2000);
+planeGeometry.rotateX(-Math.PI / 2);
+const planeMaterial = new THREE.ShadowMaterial({opacity: 0.2});
+const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+plane.position.y = -200;
+plane.receiveShadow = true;
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+const line = new THREE.Line(
+  new THREE.Geometry(), 
+  new THREE.MeshBasicMaterial({color: "rgba(255, 0, 0, .01)"})
+  );
+line.castShadow = true;
+
+document.querySelector(".scene-container").appendChild(renderer.domElement);
+
+scene.add(camera)
+    .add(light)
+    .add(new THREE.AmbientLight(0xf0f0f0))
+    .add(plane)
+    .add(helper)
+    .add(line);
+
+for (let i=0; i<128; i += 1) {
+  for (let j=-64; j<64; j += 1) {
+    const theta = (i/128) * (Math.PI);
+    const phi = (j/64) * (Math.PI);
+    const newVertex = new THREE.Vector3(...getCoords(theta, phi));
+
+    newVertex.orig = [theta, phi];
+    line.geometry.vertices.push(newVertex);
+  }
+}
+
+const count = line.geometry.vertices.length;
+analyser.fftSize = count;
+const dataArray = new Uint8Array(analyser.fftSize);
+
+animate();
+
+function getCoords(theta, phi, newR = 1) {
+  const x = newR * Math.sin(theta) * Math.cos(phi);
+  const y = newR * Math.sin(theta) * Math.sin(phi);
+  const z = newR * Math.cos(theta);
+  return [x, y, z];
+}
+
+function updateRadius(n, delta) {
+  const vertex = line.geometry.vertices[n];
+  const [x, y, z] = getCoords(...vertex.orig, delta);
+  vertex.x = x;
+  vertex.y = y;
+  vertex.z = z;
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  analyser.getByteTimeDomainData(dataArray);
+  drawArray = [...dataArray, ...drawArray].slice(0, count)
+  for (let i = 0; i < count; i += 2) updateRadius(i, (dataArray[i] - 128))
+  line.geometry.verticesNeedUpdate = true;
+  renderer.render(scene, camera);
+}
+</script>

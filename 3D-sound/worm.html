@@ -1,0 +1,170 @@
+<!-- heavily influenced by:
+TatumCreative (Greg Tatum) / http://gregtatum.com/
+-->
+<!DOCTYPE html>
+<title>Ear Worm</title>
+<style>
+  body {
+    font-family: Monospace;
+    margin: 0px;
+    overflow: hidden;
+  }
+  .controller-container {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+  .left, .right {
+    z-index: 9;
+  }
+  .controller {
+    background-color: rgba(255, 255, 255, .75);
+    box-shadow: 0px 0px 5px rgb(200, 200, 200);
+    margin: 10px;
+    padding: 10px;
+  }
+  button, select, label {
+    display: block;
+    margin-top: 5px;
+  }
+  h3 {
+    margin-top: 0px;
+    margin-bottom: 10px;
+  }
+  .scene-container {
+    position: absolute;
+    left: 0px;
+    top: 0px;
+  }
+</style>
+
+<div class="controller-container">
+  <div class="right controller">
+    <button onclick="controls.reset()">Recenter camera</button>
+    <label>
+      <input  type="checkbox"
+              onchange="renderer.setClearColor(this.checked ? 0x000000 : 0xffffff)
+                        light.castShadow = !this.checked" 
+              checked>
+      Dark
+    </label>
+    <label>
+      <input  type="checkbox"
+              onchange="helper.visible = this.checked" 
+              checked>
+      Helper Grid
+    </label>
+    <label>
+      <input  type="checkbox" class="wireframe" 
+              onchange="mesh.material.wireframe = this.checked">
+      Wireframe
+    </label>
+  </div>
+</div>  
+
+<div class="scene-container"></div>
+
+<script src="../js/three.min.js"></script>
+<script src="../js/OrbitControls.js"></script>
+<script src="../js/wormData.js"></script>
+
+<script>
+let count = 0;
+let position = 0;
+let sampleLength = 0;
+
+const scene = new THREE.Scene();
+
+const renderer = new THREE.WebGLRenderer( { antialias: true } );
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+
+
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 1, 10000);
+camera.position.set(0, 0, 500);
+
+const helper = new THREE.GridHelper( 2000, 100 );
+helper.position.y = - 199;
+helper.material.opacity = 0.25;
+helper.material.transparent = true;
+helper.name = "helper-grid"
+
+const light = new THREE.SpotLight(0xffffff, 1.5);
+light.position.set(0, 1500, 0);
+light.shadow = new THREE.LightShadow(new THREE.PerspectiveCamera(70, 1, 200, 2000));
+
+const planeGeometry = new THREE.PlaneGeometry(2000, 2000);
+planeGeometry.rotateX(-Math.PI / 2);
+const planeMaterial = new THREE.ShadowMaterial({opacity: 0.2});
+const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+plane.position.y = -200;
+plane.receiveShadow = true;
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableKeys = false;
+
+document.querySelector(".scene-container").appendChild(renderer.domElement);
+
+const mesh = new THREE.Mesh(
+  new THREE.Geometry(),
+  new THREE.MeshPhongMaterial({color: 0x156289})
+);
+mesh.castShadow = true;
+
+scene.add(camera)
+    .add(helper)
+    .add(new THREE.AmbientLight(0xf0f0f0))
+    .add(light)
+    .add(plane)
+    .add(mesh);
+
+// the constructor for the 'tube' geometry
+function CustomSinCurve() {
+  THREE.Curve.call(this);
+}
+
+CustomSinCurve.prototype = Object.create(THREE.Curve.prototype);
+CustomSinCurve.prototype.constructor = CustomSinCurve;
+CustomSinCurve.prototype.getPoint = function () {
+  const x = wormData[count % wormData.length] * 500;
+  const y = wormData[(count + sampleLength) % wormData.length] * 500;
+  const z = wormData[(count + sampleLength * 2) % wormData.length] * 500;
+  count++;
+  return new THREE.Vector3(x, y, z);
+};
+
+generateGeometry();
+
+renderLoop();
+
+
+function generateGeometry() {
+  const path = new CustomSinCurve();
+  mesh.geometry = new THREE.TubeGeometry(path, 50, 2, 8, true);
+}
+
+// the render loop
+function renderLoop() {
+  requestAnimationFrame(renderLoop);
+  updateGeometry();
+  renderer.render(scene, camera);
+};
+
+function updateGeometry() {
+  sampleLength = count - position;
+  count = position;
+  position++;
+  
+  mesh.geometry.dispose();
+
+  const path = new CustomSinCurve();
+  mesh.geometry = new THREE.TubeGeometry(path, 50, 5, 32, true);
+}
+
+window.addEventListener( 'resize', function () {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize( window.innerWidth, window.innerHeight );
+}, false );
+</script>

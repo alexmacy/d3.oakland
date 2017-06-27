@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<title>2D Rhodonea Curve</title>
+<style>
+  body {
+    font-family: Monospace;
+    margin:0px;
+  }
+  canvas {
+    position: absolute; 
+    top: 0px; 
+    left: 0px; 
+    z-index: -2;
+  }
+  .controls {
+    background-color: rgba(255, 255, 255, .75);
+    box-shadow: 0px 0px 5px rgb(200, 200, 200);
+    margin: 5px;
+    padding: 10px;
+    z-index: 9;
+    display: inline-block;
+  }
+</style>
+
+<div class="controls">
+  <div class="a">
+    <div class="aText">a: </div>
+    <input type="range" min="1" max="20" name="a" oninput="updateRange(this)">
+  </div>
+  <div class="b">
+    <div class="bText">b: </div>
+    <input type="range" min="1" max="20" name="b" oninput="updateRange(this)">
+  </div>  
+</div>
+
+<canvas></canvas>
+
+<script>
+const canvas = document.querySelector('canvas');
+canvas.setAttribute('width',innerWidth);
+canvas.setAttribute('height',innerHeight);
+
+const canvasCtx = canvas.getContext("2d");
+canvasCtx.fillStyle = 'rgb(255, 255, 255)';
+canvasCtx.strokeStyle = 'rgb(255, 0, 0)';
+canvasCtx.lineWidth = .5;
+
+const length = 7200;
+let t = 1;
+
+const state = {
+  a: Math.ceil(Math.random() * 20),
+  b: Math.ceil(Math.random() * 20),
+  oldA: 0,
+  oldB: 0,
+}
+
+// make sure a and b are different
+state.b = state.b === state.a ? Math.ceil(Math.random() * 20) : state.b;
+
+document.querySelector("input[name=a]").value = state.a;
+document.querySelector("input[name=b]").value = state.b;
+
+const aText = document.querySelector(".aText");
+const bText = document.querySelector(".bText");
+
+aText.innerHTML = "a: " + state.a;
+bText.innerHTML = "b: " + state.b;
+
+update();
+
+
+function updateRange(input) {
+  state[input.name] = Number(input.value);
+
+  if (input.name === "a") aText.innerHTML = "a: " + state.a;
+  else bText.innerHTML = "b: " + state.b;
+
+  if (t >= 1) {
+    t = 0;
+    update();
+  } else {
+    [state.oldA, state.oldB] = [state.a, state.b];
+  }
+}
+
+function update() {
+  canvasCtx.fillRect(0, 0, innerWidth, innerHeight);
+
+  t = t >= 1 ? 1 : t + .05;  
+
+  if (t === 1) [state.oldA, state.oldB] = [state.a, state.b];
+  else requestAnimationFrame(update);
+
+  canvasCtx.beginPath();
+
+  let i = length;
+  while (i--) {
+    const oldX = getVal(state.oldA, i, "sin") + getVal(state.oldB, i, "sin");
+    const oldY = getVal(state.oldA, i, "cos") + getVal(state.oldB, i, "cos");
+
+    const x = getVal(state.a, i, "sin") + getVal(state.b, i, "sin");
+    const y = getVal(state.a, i, "cos") + getVal(state.b, i, "cos");
+
+    canvasCtx.lineTo(tween(oldX, x) + innerWidth/2, tween(oldY, y) + innerHeight/2);
+  }
+
+  canvasCtx.stroke();  
+}
+
+function getVal(val, n, func) {
+  return  Math[func](2 * Math.PI * val * n / length) * Math.min(innerWidth, innerHeight) / 5;
+}
+
+function tween(oldVal, newVal) {
+  return oldVal * (1 - t) + newVal * t;
+}
+</script>

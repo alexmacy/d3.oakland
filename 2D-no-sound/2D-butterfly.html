@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<title>2D Butterfly Curve</title>
+<meta charset="utf-8">
+<style>
+body {
+  font-family: Monospace;
+  margin:0px;
+}
+canvas {
+  position: absolute; 
+  top: 0px; 
+  left: 0px; 
+  z-index: -2;
+}
+.controls {
+  background-color: rgba(255, 255, 255, .75);
+  box-shadow: 0px 0px 5px rgb(200, 200, 200);
+  margin: 5px;
+  padding: 10px;
+  z-index: 9;
+  display: inline-block;
+}
+</style>
+
+<div class="controls">
+  <div>
+    <div id="textN">n: </div>
+    <input type="range" min="1" max="19" value="2" oninput="update('n', +this.value)">
+  </div>
+  <div>
+    <div id="textD">d: </div>
+    <input type="range" min="1" max="9" value="1" oninput="update('d', +this.value)">
+  </div>
+  <label>
+    <input type="checkbox" onchange="update('dots', this.checked)" checked> 
+    Draw as Dots
+  </label>
+</div>
+
+<canvas></canvas>
+
+<script>
+const radius = Math.min(innerWidth, innerHeight)/2 - 30;
+const dataLength = 5000;
+const state = { n:2, d:1, dots: true };
+
+const canvas = document.querySelector('canvas');
+canvas.setAttribute('width',innerWidth);
+canvas.setAttribute('height',innerHeight);
+
+const canvasCtx = canvas.getContext("2d");
+canvasCtx.fillStyle = 'rgb(255, 255, 255)';
+canvasCtx.strokeStyle = 'rgb(0, 51, 0)';
+
+update();
+
+function update(variable, value) {
+  if (variable !== undefined) state[variable] = value;
+
+  canvasCtx.fillRect(0, 0, innerWidth, innerHeight);
+  
+  document.getElementById("textN").innerHTML = "n: " + state.n;
+  document.getElementById("textD").innerHTML = "d: " + state.d;
+
+  let t = dataLength;
+
+  if (state.dots) {
+    canvasCtx.lineWidth = .5;
+    while (t--) {
+      canvasCtx.beginPath();
+      canvasCtx.arc(butterflyX(t), butterflyY(t), 1, 0, Math.PI * 2, false);
+      canvasCtx.stroke();
+    }
+
+  } else {
+    canvasCtx.lineWidth = .1;
+    canvasCtx.beginPath();
+    while (t--) canvasCtx.lineTo(butterflyX(t), butterflyY(t));
+    canvasCtx.stroke();    
+
+  }
+}
+
+function butterflyX(t) {
+  return radius / 5 * Math.sin(t) * 
+          (Math.pow(state.n / state.d, Math.cos(t)) - 
+            2 * Math.cos(t * 4) - sin5(t / 12)) + 
+          innerWidth / 2;
+}
+
+function butterflyY(t) {
+  return radius / 5 * Math.cos(t) * 
+          (Math.pow(state.n / state.d, Math.cos(t)) - 
+            2 * Math.cos(t * 4) - sin5(t / 12)) + 
+          innerHeight / 2;
+}
+
+function sin5(num) {
+  return (10 * Math.sin(num) + 5 * Math.sin(num * 3) + 
+          Math.sin(num * 5)) / 16;
+}
+</script>

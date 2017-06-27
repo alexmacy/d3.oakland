@@ -1,0 +1,69 @@
+<!--
+visualizing time series data from the audio buffer using rotating ellipses
+-->
+<!DOCTYPE html>
+<title>Rotating Ellipses v2</title>
+<body style="margin: 0px">
+  <canvas></canvas>
+</body>
+<script>
+const width = innerWidth;
+const height = innerHeight;
+
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const analyser = audioCtx.createAnalyser();
+
+const canvas = document.querySelector('canvas');
+canvas.setAttribute('width', width);
+canvas.setAttribute('height', height);
+
+const canvasCtx = canvas.getContext("2d");
+canvasCtx.fillStyle = 'rgb(0, 0, 0)';
+canvasCtx.strokeStyle = 'rgb(255, 0, 0)';
+canvasCtx.lineWidth = .1;
+
+const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+navigator.getUserMedia (
+  {audio: true},
+  function(stream) {
+    audioCtx.createMediaStreamSource(stream).connect(analyser);
+    draw();
+  },
+  function(err) {
+    console.log('The following gUM error occured: ' + err);
+  }
+);
+
+function draw() {
+  canvasCtx.fillRect(0, 0, width, height);
+
+  analyser.getByteTimeDomainData(dataArray);
+  const [min, max] = [Math.min(...dataArray), Math.max(...dataArray)];
+
+  if (max - min > 1) {
+    for(let i = 0; i < dataArray.length; i++) {
+      if (dataArray[i] === 127) continue;
+
+      const thisVol = ((dataArray[i] - min)/(max-min)) * Math.min(width, height)/2;
+      const thisRotation = i/dataArray.length * Math.PI
+      
+      canvasCtx.beginPath();
+      
+      canvasCtx.ellipse(
+        width/2, 
+        height/2, 
+        thisVol/2 + 1, 
+        thisVol + 1, 
+        thisRotation, 
+        0, 
+        2 * Math.PI
+      );
+
+      canvasCtx.stroke();
+    }
+  }
+  requestAnimationFrame(draw);
+};
+
+</script>
